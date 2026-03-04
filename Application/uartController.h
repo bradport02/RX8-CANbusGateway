@@ -17,6 +17,7 @@ public:
 
     // Simple packet sending - just CMD and DATA
     Q_INVOKABLE void sendPacket(int cmd, const QString &data);
+    Q_INVOKABLE void sendTemperature(int cmd, float temperature);
 
 signals:
     void dataReceived(QByteArray data);

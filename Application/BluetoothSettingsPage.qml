@@ -5,6 +5,9 @@ Rectangle {
     id: bluetoothSettingsPage
     color: "#1a1a1a"
 
+    // Track which address is currently being paired — drives Pair button feedback
+    property string pairingAddress: ""
+
     // ── Header ────────────────────────────────────────────────────────────────
     Rectangle {
         id: header
@@ -27,7 +30,6 @@ Rectangle {
         anchors.top: header.bottom
         anchors.bottom: parent.bottom
         width: parent.width
-        anchors.margins: 0
         spacing: 0
 
         // ── Power + Status row ────────────────────────────────────────────────
@@ -38,7 +40,6 @@ Rectangle {
             border.color: "#2a2a2a"
             border.width: 1
 
-            // Text column — left side
             Column {
                 anchors.left: parent.left
                 anchors.leftMargin: 20
@@ -62,35 +63,26 @@ Rectangle {
                 }
             }
 
-            // Power toggle switch — right side
             Item {
                 anchors.right: parent.right
                 anchors.rightMargin: 20
                 anchors.verticalCenter: parent.verticalCenter
-                width: 50
-                height: 28
+                width: 50; height: 28
 
                 Rectangle {
-                    id: toggleTrack
                     anchors.fill: parent
                     radius: 14
                     color: bluetoothManager.powered ? "#4a6fc7" : "#444444"
-
                     Behavior on color { ColorAnimation { duration: 200 } }
 
                     Rectangle {
-                        id: toggleKnob
-                        width: 22
-                        height: 22
-                        radius: 11
+                        width: 22; height: 22; radius: 11
                         color: "white"
                         anchors.verticalCenter: parent.verticalCenter
                         x: bluetoothManager.powered ? parent.width - width - 3 : 3
-
                         Behavior on x { NumberAnimation { duration: 200 } }
                     }
                 }
-
                 MouseArea {
                     anchors.fill: parent
                     onClicked: bluetoothManager.setPower(!bluetoothManager.powered)
@@ -98,7 +90,7 @@ Rectangle {
             }
         }
 
-        // ── Paired Devices ────────────────────────────────────────────────────
+        // ── MY DEVICES header ─────────────────────────────────────────────────
         Rectangle {
             width: parent.width
             height: 40
@@ -114,7 +106,6 @@ Rectangle {
                 anchors.leftMargin: 20
                 anchors.verticalCenter: parent.verticalCenter
             }
-
             Text {
                 text: bluetoothManager.pairedDevices.length + " / 5"
                 color: "#444444"
@@ -125,7 +116,7 @@ Rectangle {
             }
         }
 
-        // Paired device list
+        // ── Paired device list ────────────────────────────────────────────────
         ListView {
             id: deviceList
             width: parent.width
@@ -134,45 +125,58 @@ Rectangle {
             clip: true
 
             delegate: Rectangle {
+                id: deviceRow
                 width: deviceList.width
                 height: 68
                 color: "#1a1a1a"
 
-                // Bottom divider
+                // Read directly from bluetoothManager so connected state stays live
+                // after reconnect without needing modelData to deep-update
+                readonly property string devAddress: modelData ? (modelData["address"] || "") : ""
+                readonly property string devName:    modelData ? (modelData["name"]    || "") : ""
+
+                // Re-check connected state from the live manager, not cached modelData
+                readonly property bool devConnected: {
+                    if (devAddress === "") return false
+                    var devices = bluetoothManager.pairedDevices
+                    for (var i = 0; i < devices.length; i++) {
+                        if (devices[i]["address"] === devAddress)
+                            return devices[i]["connected"] || false
+                    }
+                    return false
+                }
+
                 Rectangle {
-                    width: parent.width - 40
-                    height: 1
+                    width: parent.width - 40; height: 1
                     color: "#2a2a2a"
                     anchors.bottom: parent.bottom
                     anchors.left: parent.left
                     anchors.leftMargin: 20
                 }
 
-                // Avatar
+                // Avatar circle
                 Rectangle {
-                    width: 40
-                    height: 40
-                    radius: 20
+                    width: 40; height: 40; radius: 20
                     anchors.left: parent.left
                     anchors.leftMargin: 20
                     anchors.verticalCenter: parent.verticalCenter
-                    color: modelData.connected ? "#1a3a6a" : "#2a2a2a"
-                    border.color: modelData.connected ? "#4a6fc7" : "#3a3a3a"
+                    color: devConnected ? "#1a3a6a" : "#2a2a2a"
+                    border.color: devConnected ? "#4a6fc7" : "#3a3a3a"
                     border.width: 1
                     Text { anchors.centerIn: parent; text: "📱"; font.pixelSize: 18 }
                 }
 
-                // Name + status
+                // Name + status badge
                 Column {
                     anchors.left: parent.left
                     anchors.leftMargin: 70
                     anchors.right: parent.right
-                    anchors.rightMargin: 130
+                    anchors.rightMargin: 190
                     anchors.verticalCenter: parent.verticalCenter
                     spacing: 4
 
                     Text {
-                        text: modelData.name
+                        text: devName
                         color: "white"
                         font.pixelSize: 14
                         font.bold: true
@@ -181,14 +185,13 @@ Rectangle {
                     }
                     Rectangle {
                         width: statusText.width + 12
-                        height: 18
-                        radius: 9
-                        color: modelData.connected ? "#1a4a1a" : "transparent"
+                        height: 18; radius: 9
+                        color: devConnected ? "#1a4a1a" : "transparent"
                         Text {
                             id: statusText
                             anchors.centerIn: parent
-                            text: modelData.connected ? "Connected" : "Paired"
-                            color: modelData.connected ? "#4aff4a" : "#666666"
+                            text: devConnected ? "Connected" : "Paired"
+                            color: devConnected ? "#4aff4a" : "#666666"
                             font.pixelSize: 10
                             font.bold: true
                         }
@@ -203,92 +206,88 @@ Rectangle {
                     spacing: 6
 
                     Rectangle {
-                        width: 80
-                        height: 30
-                        radius: 8
-                        color: modelData.connected ? "#3a1a1a" : "#1a3a1a"
-                        border.color: modelData.connected ? "#7a2a2a" : "#2a7a2a"
+                        width: 90; height: 30; radius: 8
+                        color: devConnected ? "#3a1a1a" : "#1a3a1a"
+                        border.color: devConnected ? "#7a2a2a" : "#2a7a2a"
                         border.width: 1
                         Text {
                             anchors.centerIn: parent
-                            text: modelData.connected ? "Disconnect" : "Connect"
-                            color: modelData.connected ? "#ff6b6b" : "#6bff8a"
+                            text: devConnected ? "Disconnect" : "Connect"
+                            color: devConnected ? "#ff6b6b" : "#6bff8a"
                             font.pixelSize: 10
                             font.bold: true
                         }
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
-                                if (modelData.connected)
-                                    bluetoothManager.disconnectDevice(modelData.address)
+                                if (devConnected)
+                                    bluetoothManager.disconnectDevice(devAddress)
                                 else
-                                    bluetoothManager.connectDevice(modelData.address)
+                                    bluetoothManager.connectDevice(devAddress)
                             }
                         }
                     }
 
                     Rectangle {
-                        width: 30
-                        height: 30
-                        radius: 8
-                        color: "#2a2a2a"
-                        border.color: "#3a3a3a"
+                        width: 70; height: 30; radius: 8
+                        color: "#3a1a1a"
+                        border.color: "#7a2a2a"
                         border.width: 1
-                        Text { anchors.centerIn: parent; text: "✕"; color: "#888888"; font.pixelSize: 13 }
+                        Text {
+                            anchors.centerIn: parent
+                            text: "Remove"
+                            color: "#ff6b6b"
+                            font.pixelSize: 10
+                            font.bold: true
+                        }
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: removeConfirm.show(modelData.address, modelData.name)
+                            onClicked: removeConfirm.show(devAddress, devName)
                         }
                     }
                 }
             }
         }
 
-        // ── Scan for new devices ──────────────────────────────────────────────
+        // ── Scan button ───────────────────────────────────────────────────────
         Rectangle {
             width: parent.width
-            height: 40
+            height: 50
             color: "#111111"
+            visible: bluetoothManager.powered
 
-            Text {
-                anchors.left: parent.left
-                anchors.leftMargin: 20
-                anchors.verticalCenter: parent.verticalCenter
-                text: "NEW DEVICES"
-                color: "#555d72"
-                font.pixelSize: 10
-                font.bold: true
-                font.letterSpacing: 2
-            }
-
-            // Scan button
             Rectangle {
-                anchors.right: parent.right
-                anchors.rightMargin: 16
-                anchors.verticalCenter: parent.verticalCenter
-                width: 80
-                height: 26
-                radius: 8
-                color: bluetoothManager.discovering ? "#3a2a10" : "#1e2230"
-                border.color: bluetoothManager.discovering ? "#c77a20" : "#4a6fc7"
+                anchors.centerIn: parent
+                width: 180; height: 34; radius: 8
+                color: bluetoothManager.discovering ? "#1a2a4a" : "#1e2035"
+                border.color: bluetoothManager.discovering ? "#4a6fc7" : "#333355"
                 border.width: 1
-                visible: bluetoothManager.powered
-                         && bluetoothManager.pairedDevices.length < 5
 
-                Text {
+                Row {
                     anchors.centerIn: parent
-                    text: bluetoothManager.discovering ? "Stop" : "Scan"
-                    color: bluetoothManager.discovering ? "#ffaa44" : "#7ab3ff"
-                    font.pixelSize: 11
-                    font.bold: true
-                }
+                    spacing: 8
 
-                // Pulsing animation while scanning
-                SequentialAnimation on opacity {
-                    running: bluetoothManager.discovering
-                    loops: Animation.Infinite
-                    NumberAnimation { to: 0.5; duration: 800 }
-                    NumberAnimation { to: 1.0; duration: 800 }
+                    // Spinning dot when discovering
+                    Rectangle {
+                        width: 8; height: 8; radius: 4
+                        color: "#4a6fc7"
+                        visible: bluetoothManager.discovering
+                        anchors.verticalCenter: parent.verticalCenter
+                        SequentialAnimation on opacity {
+                            running: bluetoothManager.discovering
+                            loops: Animation.Infinite
+                            NumberAnimation { to: 0.2; duration: 500 }
+                            NumberAnimation { to: 1.0; duration: 500 }
+                        }
+                    }
+
+                    Text {
+                        text: bluetoothManager.discovering ? "Stop Scanning" : "Scan for Devices"
+                        color: bluetoothManager.discovering ? "#7ab3ff" : "#aaaacc"
+                        font.pixelSize: 13
+                        font.bold: bluetoothManager.discovering
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
                 }
 
                 MouseArea {
@@ -303,112 +302,143 @@ Rectangle {
             }
         }
 
-        // Discovered devices list
+        // ── NEW DEVICES header ────────────────────────────────────────────────
+        Rectangle {
+            width: parent.width
+            height: 40
+            color: "#111111"
+            visible: bluetoothManager.discovering || discoveredList.count > 0
+
+            Text {
+                text: "NEW DEVICES"
+                color: "#555d72"
+                font.pixelSize: 10
+                font.bold: true
+                font.letterSpacing: 2
+                anchors.left: parent.left
+                anchors.leftMargin: 20
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+
+        // ── Discovered devices list ───────────────────────────────────────────
         ListView {
             id: discoveredList
             width: parent.width
             height: Math.min(contentHeight, 200)
             model: discoveredModel
             clip: true
-            visible: bluetoothManager.discovering || count > 0
+            visible: discoveredList.count > 0
 
             delegate: Rectangle {
                 width: discoveredList.width
                 height: 60
                 color: "#1a1a1a"
 
+                readonly property string discAddress: model.address || ""
+                readonly property string discName:    model.name    || ""
+                readonly property bool   isPairing:   bluetoothSettingsPage.pairingAddress === discAddress
+
                 Rectangle {
-                    width: parent.width - 40
-                    height: 1
+                    width: parent.width - 40; height: 1
                     color: "#2a2a2a"
                     anchors.bottom: parent.bottom
                     anchors.left: parent.left
                     anchors.leftMargin: 20
                 }
 
-                Row {
-                    anchors.fill: parent
-                    anchors.margins: 16
-                    spacing: 14
+                // Icon
+                Rectangle {
+                    width: 36; height: 36; radius: 18
+                    color: "#2a2a2a"
+                    anchors.left: parent.left
+                    anchors.leftMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    Text { anchors.centerIn: parent; text: "📡"; font.pixelSize: 16 }
+                }
 
-                    Rectangle {
-                        width: 36
-                        height: 36
-                        radius: 18
-                        color: "#2a2a2a"
-                        anchors.verticalCenter: parent.verticalCenter
-                        Text { anchors.centerIn: parent; text: "📡"; font.pixelSize: 16 }
-                    }
+                // Device name
+                Text {
+                    text: discName || discAddress
+                    color: "white"
+                    font.pixelSize: 14
+                    anchors.left: parent.left
+                    anchors.leftMargin: 62
+                    anchors.right: parent.right
+                    anchors.rightMargin: 80
+                    anchors.verticalCenter: parent.verticalCenter
+                    elide: Text.ElideRight
+                }
 
-                    Text {
-                        text: model.name || model.address
-                        color: "white"
-                        font.pixelSize: 14
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: parent.width - 120
-                        elide: Text.ElideRight
-                    }
+                // Pair button — shows spinner while pairing
+                Rectangle {
+                    anchors.right: parent.right
+                    anchors.rightMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: 70; height: 30; radius: 8
+                    color: isPairing ? "#1a2a4a" : "#1a3a1a"
+                    border.color: isPairing ? "#4a6fc7" : "#2a6a2a"
+                    border.width: 1
 
-                    Rectangle {
-                        anchors.verticalCenter: parent.verticalCenter
-                        anchors.right: parent.right
-                        width: 54
-                        height: 28
-                        radius: 8
-                        color: "#1a3a1a"
-                        border.color: "#2a6a2a"
-                        border.width: 1
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 6
 
-                        Text {
-                            anchors.centerIn: parent
-                            text: "Pair"
-                            color: "#6bff8a"
-                            font.pixelSize: 11
-                            font.bold: true
+                        // Animated dot when pairing
+                        Rectangle {
+                            width: 6; height: 6; radius: 3
+                            color: "#7ab3ff"
+                            visible: isPairing
+                            anchors.verticalCenter: parent.verticalCenter
+                            SequentialAnimation on opacity {
+                                running: isPairing
+                                loops: Animation.Infinite
+                                NumberAnimation { to: 0.2; duration: 400 }
+                                NumberAnimation { to: 1.0; duration: 400 }
+                            }
                         }
 
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: bluetoothManager.connectDevice(model.address)
+                        Text {
+                            text: isPairing ? "Pairing..." : "Pair"
+                            color: isPairing ? "#7ab3ff" : "#6bff8a"
+                            font.pixelSize: 11
+                            font.bold: isPairing
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        enabled: !isPairing
+                        onClicked: {
+                            bluetoothSettingsPage.pairingAddress = discAddress
+                            bluetoothManager.connectDevice(discAddress)
                         }
                     }
                 }
             }
         }
 
-        // Scanning spinner
+        // Scanning spinner (when discovering but no devices found yet)
         Item {
             width: parent.width
-            height: 60
+            height: 50
             visible: bluetoothManager.discovering && discoveredList.count === 0
 
             Row {
                 anchors.centerIn: parent
-                spacing: 10
+                spacing: 8
 
-                Rectangle {
-                    width: 8; height: 8; radius: 4; color: "#7ab3ff"
-                    SequentialAnimation on opacity {
-                        loops: Animation.Infinite
-                        NumberAnimation { to: 0.2; duration: 400 }
-                        NumberAnimation { to: 1.0; duration: 400 }
-                    }
-                }
-                Rectangle {
-                    width: 8; height: 8; radius: 4; color: "#7ab3ff"
-                    SequentialAnimation on opacity {
-                        loops: Animation.Infinite
-                        NumberAnimation { to: 0.2; duration: 400; easing.type: Easing.InOutSine }
-                        NumberAnimation { to: 1.0; duration: 400 }
-                    }
-                    Component.onCompleted: { }
-                }
-                Rectangle {
-                    width: 8; height: 8; radius: 4; color: "#7ab3ff"
-                    SequentialAnimation on opacity {
-                        loops: Animation.Infinite
-                        NumberAnimation { to: 0.2; duration: 400 }
-                        NumberAnimation { to: 1.0; duration: 400 }
+                Repeater {
+                    model: 3
+                    Rectangle {
+                        width: 7; height: 7; radius: 3.5; color: "#7ab3ff"
+                        SequentialAnimation on opacity {
+                            loops: Animation.Infinite
+                            NumberAnimation { to: 0.2; duration: 400; easing.type: Easing.InOutSine }
+                            NumberAnimation { to: 1.0; duration: 400; easing.type: Easing.InOutSine }
+                            PauseAnimation { duration: index * 133 }
+                        }
                     }
                 }
 
@@ -427,17 +457,27 @@ Rectangle {
 
     Connections {
         target: bluetoothManager
+
         function onDeviceFound(address, name) {
-            // Don't add if already paired
             for (var d of bluetoothManager.pairedDevices)
-                if (d.address === address) return
-            // Don't add duplicates
+                if (d["address"] === address) return
             for (var i = 0; i < discoveredModel.count; i++)
                 if (discoveredModel.get(i).address === address) return
             discoveredModel.append({ address: address, name: name })
         }
+
         function onDiscoveringChanged(discovering) {
             if (!discovering) discoveredModel.clear()
+        }
+
+        // When a device connects, clear pairingAddress so button resets
+        function onConnectedChanged() {
+            bluetoothSettingsPage.pairingAddress = ""
+        }
+
+        // Also clear pairing state on error
+        function onErrorOccurred(message) {
+            bluetoothSettingsPage.pairingAddress = ""
         }
     }
 
@@ -458,11 +498,15 @@ Rectangle {
             visible = true
         }
 
+        // Background dismiss — FIRST child so dialog sits on top
+        MouseArea {
+            anchors.fill: parent
+            onClicked: removeConfirm.visible = false
+        }
+
         Rectangle {
             anchors.centerIn: parent
-            width: 300
-            height: 140
-            radius: 14
+            width: 300; height: 140; radius: 14
             color: "#222222"
             border.color: "#333333"
             border.width: 1
@@ -487,36 +531,17 @@ Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
 
                     Rectangle {
-                        width: 110
-                        height: 36
-                        radius: 8
+                        width: 110; height: 36; radius: 8
                         color: "#2a2a2a"
-                        Text {
-                            anchors.centerIn: parent
-                            text: "Cancel"
-                            color: "#aaaaaa"
-                            font.pixelSize: 13
-                        }
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: removeConfirm.visible = false
-                        }
+                        Text { anchors.centerIn: parent; text: "Cancel"; color: "#aaaaaa"; font.pixelSize: 13 }
+                        MouseArea { anchors.fill: parent; onClicked: removeConfirm.visible = false }
                     }
 
                     Rectangle {
-                        width: 110
-                        height: 36
-                        radius: 8
+                        width: 110; height: 36; radius: 8
                         color: "#3a1a1a"
-                        border.color: "#7a2a2a"
-                        border.width: 1
-                        Text {
-                            anchors.centerIn: parent
-                            text: "Remove"
-                            color: "#ff6b6b"
-                            font.pixelSize: 13
-                            font.bold: true
-                        }
+                        border.color: "#7a2a2a"; border.width: 1
+                        Text { anchors.centerIn: parent; text: "Remove"; color: "#ff6b6b"; font.pixelSize: 13; font.bold: true }
                         MouseArea {
                             anchors.fill: parent
                             onClicked: {
@@ -528,7 +553,5 @@ Rectangle {
                 }
             }
         }
-
-        MouseArea { anchors.fill: parent; onClicked: removeConfirm.visible = false }
     }
 }

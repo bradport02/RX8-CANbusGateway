@@ -9,6 +9,7 @@
 #include "BluetoothManager.h"
 #include "CallManager.h"
 #include "ContactsManager.h"
+#include "BluetoothMediaPlayer.h"
 
 int main(int argc, char *argv[])
 {
@@ -30,13 +31,15 @@ int main(int argc, char *argv[])
     engine.rootContext()->setContextProperty("canController", &canController);
 
     // ── Bluetooth / Phone controllers ─────────────────────────────────────────
-    BluetoothManager bluetoothManager;
-    CallManager      callManager;
-    ContactsManager  contactsManager;
+    BluetoothManager     bluetoothManager;
+    CallManager          callManager;
+    ContactsManager      contactsManager;
+    BluetoothMediaPlayer mediaPlayer;
 
     engine.rootContext()->setContextProperty("bluetoothManager",  &bluetoothManager);
     engine.rootContext()->setContextProperty("callManager",       &callManager);
     engine.rootContext()->setContextProperty("contactsManager",   &contactsManager);
+    engine.rootContext()->setContextProperty("mediaPlayer",        &mediaPlayer);
 
     // ── Wire: phone connects → set oFono modem path + auto-sync contacts ──────
     // Use raw pointers — lambdas can't safely capture local references across
@@ -44,10 +47,22 @@ int main(int argc, char *argv[])
     CallManager      *callMgrPtr     = &callManager;
     ContactsManager  *contactsMgrPtr = &contactsManager;
 
+    // Tracks last connected address to prevent duplicate sync on startup
+    // (refreshPairedDevices + connectLastDevice both fire connectedChanged)
+    static QString lastSyncedAddr;
+
     QObject::connect(
         &bluetoothManager, &BluetoothManager::connectedChanged,
-        [&bluetoothManager, callMgrPtr, contactsMgrPtr]() {
-            if (!bluetoothManager.isConnected()) return;
+        [&bluetoothManager, callMgrPtr, contactsMgrPtr, &mediaPlayer]() {
+            if (!bluetoothManager.isConnected()) {
+                // Only clear if we had actually synced
+                if (!lastSyncedAddr.isEmpty()) {
+                    contactsMgrPtr->clearContacts();
+                }
+                // Always clear so next connection triggers fresh sync
+                lastSyncedAddr.clear();
+                return;
+            }
 
             QString connectedAddr;
             for (const QVariant &v : bluetoothManager.pairedDevicesVariant()) {
@@ -64,11 +79,23 @@ int main(int argc, char *argv[])
                                 QString(connectedAddr).replace(":", "_");
 
             qDebug() << "[Main] Phone connected. Modem path:" << modemPath;
-
             callMgrPtr->setModemPath(modemPath);
 
-            // Delay sync 3s to let HFP service level connection settle first
-            QTimer::singleShot(3000, [contactsMgrPtr, connectedAddr]() {
+            // Set AVRCP media player path
+            // Pass base device path — BluetoothMediaPlayer appends /player0 etc.
+            QString mediaBasePath = "/org/bluez/hci0/dev_" +
+                                    QString(connectedAddr).replace(":", "_");
+            mediaPlayer.setPlayerPath(mediaBasePath);
+
+            // Deduplicate: skip if already syncing/synced this address
+            if (lastSyncedAddr == connectedAddr) {
+                qDebug() << "[Main] Already synced" << connectedAddr << "— skipping";
+                return;
+            }
+            lastSyncedAddr = connectedAddr;
+
+            // 5s delay — iOS needs time after HFP to make PBAP available
+            QTimer::singleShot(5000, [contactsMgrPtr, connectedAddr]() {
                 contactsMgrPtr->syncContacts(connectedAddr);
             });
         }
@@ -94,32 +121,6 @@ int main(int argc, char *argv[])
 
     // ── Auto-connect to last known device 2s after startup ───────────────────
     QTimer::singleShot(2000, &bluetoothManager, &BluetoothManager::connectLastDevice);
-
-    // Check if a device is already connected at startup
-    QTimer::singleShot(3000, [&bluetoothManager, callMgrPtr, contactsMgrPtr]() {
-        if (!bluetoothManager.isConnected()) return;
-
-        QString connectedAddr;
-        for (const QVariant &v : bluetoothManager.pairedDevicesVariant()) {
-            QVariantMap m = v.toMap();
-            if (m["connected"].toBool()) {
-                connectedAddr = m["address"].toString();
-                break;
-            }
-        }
-
-        if (connectedAddr.isEmpty()) return;
-
-        QString modemPath = "/hfp/org/bluez/hci0/dev_" +
-                            QString(connectedAddr).replace(":", "_");
-
-        qDebug() << "[Main] Already connected at startup. Modem path:" << modemPath;
-        callMgrPtr->setModemPath(modemPath);
-
-        QTimer::singleShot(3000, [contactsMgrPtr, connectedAddr]() {
-            contactsMgrPtr->syncContacts(connectedAddr);
-        });
-    });
 
     return app.exec();
 }

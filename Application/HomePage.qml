@@ -57,7 +57,7 @@ Rectangle {
         }
 
         Button {
-            text: "Bluetooth"
+            text: "Phone"
             width: 100
             height: 100
 
@@ -79,7 +79,7 @@ Rectangle {
         }
 
         Button {
-            text: "Radio"
+            text: "Media"
             width: 100
             height: 100
 
@@ -97,7 +97,7 @@ Rectangle {
                 radius: width/2
             }
 
-            onClicked: stackView.push(radioPage)
+            onClicked: stackView.push(mediaPage)
         }
 
         Button {

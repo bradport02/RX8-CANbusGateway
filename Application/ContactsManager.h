@@ -17,6 +17,7 @@ class ContactsManager : public QObject
 
 public:
     explicit ContactsManager(QObject *parent = nullptr);
+    ~ContactsManager();
 
     bool         isSyncing()    const { return m_syncing; }
     int          contactCount() const { return m_contacts.size(); }
@@ -24,6 +25,7 @@ public:
 
 public slots:
     void syncContacts(const QString &deviceAddress);
+    void clearContacts();
     Q_INVOKABLE QVariantList search(const QString &query) const;
 
 signals:
@@ -38,12 +40,17 @@ private:
     void loadFromDatabase();
     void parseAndSaveVCard(const QString &filePath);
     bool openDatabase();
+    void attemptSync();
+    void cancelSync();          // kill process + reset all state
 
     QSqlDatabase  m_db;
     QVariantList  m_contacts;
-    bool          m_syncing      = false;
-    QProcess     *m_syncProcess  = nullptr;
+    bool          m_syncing        = false;
+    bool          m_retryPending   = false;  // true while retry timer is queued
+    QProcess     *m_syncProcess    = nullptr;
     QString       m_deviceAddress;
+    int           m_retryCount     = 0;
+    static constexpr int MAX_RETRIES = 5;
 };
 
 #endif // CONTACTSMANAGER_H

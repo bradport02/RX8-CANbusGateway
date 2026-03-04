@@ -1,10 +1,13 @@
 #include "BluetoothManager.h"
 
 #include <QDBusReply>
+#include <QDBusPendingCallWatcher>
+#include <QDBusPendingReply>
 #include <QDBusMessage>
 #include <QDBusMetaType>
 #include <QSettings>
 #include <QDebug>
+#include <QThread>
 
 // Type aliases and Q_DECLARE_METATYPE are in BluetoothManager.h
 
@@ -84,17 +87,68 @@ void BluetoothManager::stopDiscovery()
 void BluetoothManager::connectDevice(const QString &address)
 {
     QDBusConnection bus = QDBusConnection::systemBus();
-    QDBusInterface device("org.bluez", devicePath(address), "org.bluez.Device1", bus);
+    QString path = devicePath(address);
+    QDBusInterface device("org.bluez", path, "org.bluez.Device1", bus);
 
     if (!device.isValid()) {
         emit errorOccurred("Device not found: " + address);
         return;
     }
 
-    device.asyncCall("Connect");
+    // Check if already paired
+    bool alreadyPaired = device.property("Paired").toBool();
 
-    QSettings settings("headunit", "bluetooth");
-    settings.setValue("lastDevice", address);
+    if (!alreadyPaired) {
+        qDebug() << "[BT] Device not paired, pairing first:" << address;
+        // Pair first — when Paired property changes, onDevicePropertiesChanged
+        // will add it to the list. Then connect.
+        auto *watcher = new QDBusPendingCallWatcher(
+            device.asyncCall("Pair"), this);
+
+        connect(watcher, &QDBusPendingCallWatcher::finished,
+                this, [this, address, watcher]() {
+                    watcher->deleteLater();
+                    QDBusPendingReply<> reply = *watcher;
+                    if (reply.isError()) {
+                        qWarning() << "[BT] Pair failed:" << reply.error().message();
+                        emit errorOccurred("Pairing failed: " + reply.error().message());
+                        return;
+                    }
+                    qDebug() << "[BT] Paired OK, trusting and connecting:" << address;
+
+                    // Trust the device so iOS shows contacts/other sharing prompts
+                    QString devPath = devicePath(address);
+                    QDBusInterface props("org.bluez", devPath,
+                                         "org.freedesktop.DBus.Properties",
+                                         QDBusConnection::systemBus());
+                    props.call("Set", "org.bluez.Device1", "Trusted",
+                               QVariant::fromValue(QDBusVariant(true)));
+
+                    // Refresh list so UI shows new device, then connect
+                    refreshPairedDevices();
+                    QDBusInterface dev("org.bluez", devPath,
+                                       "org.bluez.Device1", QDBusConnection::systemBus());
+                    dev.asyncCall("Connect");
+                    QSettings settings("headunit", "bluetooth");
+                    settings.setValue("lastDevice", address);
+                });
+    } else {
+        qDebug() << "[BT] Already paired, connecting:" << address;
+
+        // Check if already connected — if so, BlueZ won't emit PropertiesChanged
+        // so we emit connectedChanged manually to trigger main.cpp wiring
+        bool alreadyConnected = device.property("Connected").toBool();
+        if (alreadyConnected) {
+            qDebug() << "[BT] Device already connected, emitting connectedChanged";
+            refreshPairedDevices();  // update m_connected / m_connectedAddress
+            emit connectedChanged();
+        } else {
+            device.asyncCall("Connect");
+        }
+
+        QSettings settings("headunit", "bluetooth");
+        settings.setValue("lastDevice", address);
+    }
 }
 
 void BluetoothManager::disconnectDevice(const QString &address)
@@ -106,12 +160,52 @@ void BluetoothManager::disconnectDevice(const QString &address)
 
 void BluetoothManager::removeDevice(const QString &address)
 {
-    m_adapter->asyncCall("RemoveDevice",
-                         QVariant::fromValue(QDBusObjectPath(devicePath(address))));
+    if (address.isEmpty()) {
+        qWarning() << "[BT] removeDevice called with empty address — ignoring";
+        return;
+    }
 
+    QString path = devicePath(address);
+    qDebug() << "[BT] Removing device:" << address << "path:" << path;
+
+    // BlueZ requires the device to be disconnected before removal.
+    // Disconnect synchronously first, ignore errors (may already be disconnected).
+    QDBusInterface device("org.bluez", path, "org.bluez.Device1",
+                          QDBusConnection::systemBus());
+    if (device.isValid()) {
+        bool isConnected = device.property("Connected").toBool();
+        if (isConnected) {
+            qDebug() << "[BT] Disconnecting before removal...";
+            QDBusMessage dcReply = device.call("Disconnect");
+            if (dcReply.type() == QDBusMessage::ErrorMessage)
+                qWarning() << "[BT] Disconnect failed (continuing anyway):" << dcReply.errorMessage();
+            else
+                QThread::msleep(500); // brief pause to let BlueZ process the disconnect
+        }
+    }
+
+    QDBusMessage reply = m_adapter->call(
+        "RemoveDevice", QVariant::fromValue(QDBusObjectPath(path)));
+
+    if (reply.type() == QDBusMessage::ErrorMessage) {
+        qWarning() << "[BT] RemoveDevice failed:" << reply.errorMessage();
+        emit errorOccurred("Failed to remove device: " + reply.errorMessage());
+    } else {
+        qDebug() << "[BT] RemoveDevice succeeded";
+    }
+
+    // Always remove from local list and update UI regardless of D-Bus result
     m_pairedDevices.removeIf([&address](const BTDevice &d) {
         return d.address == address;
     });
+
+    if (m_connectedAddress == address) {
+        m_connected = false;
+        m_connectedName.clear();
+        m_connectedAddress.clear();
+        emit connectedChanged();
+    }
+
     emit pairedDevicesChanged();
 
     QSettings settings("headunit", "bluetooth");

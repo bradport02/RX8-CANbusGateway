@@ -15,9 +15,9 @@ qt_add_qml_module(appApplication
     QML_FILES
         Main.qml
         HomePage.qml
-        RadioPage.qml
+        RadioSourceView.qml
         CarplayPage.qml
-        CDPage.qml
+        CDView.qml
         PhonePage.qml
         SettingsPage.qml
         CANBusPage.qml
@@ -42,6 +42,11 @@ qt_add_qml_module(appApplication
         ContactsManager.h
         ContactsManager.cpp
         QML_FILES ActiveCallPage.qml
+        QML_FILES MediaPage.qml
+        QML_FILES BluetoothMusicView.qml
+        QML_FILES AuxView.qml
+        SOURCES BluetoothMediaPlayer.cpp
+        SOURCES BluetoothMediaPlayer.h
 )
 
 set_target_properties(appApplication PROPERTIES

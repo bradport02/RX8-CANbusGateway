@@ -7,12 +7,19 @@
 #include <QFile>
 #include <QTextStream>
 #include <QDebug>
+#include <QProcessEnvironment>
+#include <unistd.h>
 
 ContactsManager::ContactsManager(QObject *parent)
     : QObject(parent)
 {
-    if (openDatabase())
-        loadFromDatabase();
+    // Open DB and clear any stale contacts from previous session
+    if (openDatabase()) {
+        QSqlDatabase db = QSqlDatabase::database("contacts");
+        QSqlQuery q(db);
+        q.exec("DELETE FROM contacts");
+        qDebug() << "[Contacts] Cleared stale contacts from previous session";
+    }
 }
 
 bool ContactsManager::openDatabase()
@@ -71,16 +78,25 @@ void ContactsManager::loadFromDatabase()
 
 void ContactsManager::syncContacts(const QString &deviceAddress)
 {
-    if (m_syncing) return;
+    // Cancel any existing sync/retry chain before starting fresh
+    if (m_syncing || m_retryPending)
+        cancelSync();
 
     m_deviceAddress = deviceAddress;
-    m_syncing = true;
+    m_retryCount    = 0;
+    attemptSync();
+}
+
+void ContactsManager::attemptSync()
+{
+    m_retryPending = false;
+    m_syncing      = true;
     emit syncingChanged();
 
     // Write the obexd PBAP pull script to a temp file
     const QString scriptPath = "/tmp/headunit_pbap_sync.py";
     QFile script(scriptPath);
-    if (script.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    if (script.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) {
         QTextStream s(&script);
         s << R"(
 import dbus, time, os, sys
@@ -94,14 +110,31 @@ manager = dbus.Interface(
 )
 
 try:
-    session = manager.CreateSession(addr, {'Target': 'pbap'})
+    session = manager.CreateSession(addr, {'Target': dbus.String('pbap')})
     pb = dbus.Interface(bus.get_object('org.bluez.obex', session),
                         'org.bluez.obex.PhonebookAccess1')
+
+    # Select the main phonebook on the phone's internal storage
     pb.Select('int', 'pb')
-    transfer, props = pb.PullAll('', {})
+
+    # Get total contact count so we know how many to request
+    try:
+        size = pb.GetSize()
+        print('INFO: Phonebook size = ' + str(size), file=sys.stderr)
+    except Exception:
+        size = 65535  # fallback if GetSize not supported
+
+    # PullAll with explicit MaxListCount to get all contacts in one shot
+    transfer, props = pb.PullAll('', {
+        'Format':          dbus.String('vcard30'),
+        'MaxListCount':    dbus.UInt16(min(int(size), 65535)),
+        'ListStartOffset': dbus.UInt16(0),
+        'Fields':          dbus.Array(['VERSION','FN','TEL','N'], signature='s'),
+    })
     fname = str(props.get('Filename', ''))
 
-    for _ in range(30):
+    # Wait up to 60s for the transfer file to appear and be non-empty
+    for _ in range(60):
         time.sleep(1)
         if os.path.exists(fname) and os.path.getsize(fname) > 0:
             break
@@ -110,6 +143,9 @@ try:
         with open(fname, 'r', errors='ignore') as f:
             print(f.read(), end='')
         os.remove(fname)
+    else:
+        print('ERROR: Transfer file never appeared: ' + fname, file=sys.stderr)
+        sys.exit(1)
 
     manager.RemoveSession(session)
 except Exception as e:
@@ -119,9 +155,20 @@ except Exception as e:
         script.close();
     }
 
+    // Pass the D-Bus session bus address explicitly so the Python script
+    // can reach obexd — QProcess doesn't inherit it from the environment
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    QString dbusAddr = qEnvironmentVariable("DBUS_SESSION_BUS_ADDRESS");
+    if (dbusAddr.isEmpty()) {
+        // Fallback: standard systemd user bus path
+        dbusAddr = QString("unix:path=/run/user/%1/bus").arg(getuid());
+    }
+    env.insert("DBUS_SESSION_BUS_ADDRESS", dbusAddr);
+
     m_syncProcess = new QProcess(this);
+    m_syncProcess->setProcessEnvironment(env);
     m_syncProcess->setProgram("python3");
-    m_syncProcess->setArguments({scriptPath, deviceAddress});
+    m_syncProcess->setArguments({scriptPath, m_deviceAddress});
 
     connect(m_syncProcess,
             QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
@@ -134,8 +181,32 @@ void ContactsManager::onSyncFinished(int exitCode)
 {
     if (exitCode != 0) {
         QString err = m_syncProcess->readAllStandardError();
-        qWarning() << "[Contacts] Sync failed:" << err;
-        emit syncError("Contact sync failed: " + err);
+        qWarning() << "[Contacts] Sync failed:" << err.trimmed();
+
+        m_syncProcess->deleteLater();
+        m_syncProcess = nullptr;
+        m_syncing = false;
+        emit syncingChanged();
+
+        // iOS needs time after HFP connects before PBAP is ready — retry
+        if (m_retryCount < MAX_RETRIES) {
+            m_retryCount++;
+            int delayMs = m_retryCount * 5000;  // 5s, 10s, 15s, 20s, 25s
+            qDebug() << "[Contacts] Retry" << m_retryCount << "of" << MAX_RETRIES
+                     << "in" << delayMs / 1000 << "seconds...";
+            m_retryPending = true;
+            QTimer::singleShot(delayMs, this, [this]() {
+                if (m_retryPending) {
+                    m_retryPending = false;
+                    attemptSync();
+                }
+            });
+        } else {
+            qWarning() << "[Contacts] All retries exhausted — contacts unavailable";
+            emit syncError("Could not sync contacts after " +
+                           QString::number(MAX_RETRIES) + " attempts");
+        }
+        return;
     } else {
         QString vcf = m_syncProcess->readAllStandardOutput();
         if (!vcf.isEmpty()) {
@@ -209,6 +280,36 @@ void ContactsManager::parseAndSaveVCard(const QString &filePath)
 
     qDebug() << "[Contacts] Saved" << saved << "entries";
     loadFromDatabase();
+}
+
+ContactsManager::~ContactsManager()
+{
+    cancelSync();
+}
+
+void ContactsManager::cancelSync()
+{
+    // Kill any running process immediately
+    if (m_syncProcess) {
+        m_syncProcess->kill();
+        m_syncProcess->waitForFinished(500);
+        m_syncProcess->deleteLater();
+        m_syncProcess = nullptr;
+    }
+    m_syncing      = false;
+    m_retryPending = false;
+    m_retryCount   = 0;
+    emit syncingChanged();
+}
+
+
+void ContactsManager::clearContacts()
+{
+    // Phone disconnected — kill any in-progress sync or pending retry
+    cancelSync();
+    m_contacts.clear();
+    emit contactsLoaded();
+    qDebug() << "[Contacts] Cleared (phone disconnected)";
 }
 
 QVariantList ContactsManager::search(const QString &query) const

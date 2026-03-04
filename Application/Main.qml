@@ -160,8 +160,8 @@ Window {
             }
 
             Component {
-                id: radioPage
-                RadioPage {}
+                id: mediaPage
+                MediaPage {}
             }
 
             Component {

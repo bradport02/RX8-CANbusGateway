@@ -152,7 +152,34 @@ Rectangle {
                 }
             }
 
-            // CAN Bus Button
+            Rectangle {
+                width: parent.width
+                height: 80
+                color: "#1a1a1a"
+                border.color: "#3a3a3a"
+                border.width: 1
+
+                Row {
+                    anchors.fill: parent
+                    anchors.margins: 20
+                    spacing: 20
+
+                    Text {
+                        text: "Beep Tone"
+                        color: "white"
+                        font.pixelSize: 18
+                        anchors.verticalCenter: parent.verticalCenter
+                        width: parent.width - 100
+                    }
+
+                    Switch {
+                        anchors.verticalCenter: parent.verticalCenter
+                        checked: true
+                    }
+                }
+            }
+
+            // Bluetooth Connection
             Rectangle {
                 width: parent.width
                 height: 80
@@ -197,22 +224,6 @@ Rectangle {
                 }
             }
 
-            // Another Section
-            Rectangle {
-                width: parent.width
-                height: 60
-                color: "#2a2a2a"
-
-                Text {
-                    text: "Audio Settings"
-                    color: "white"
-                    font.pixelSize: 20
-                    font.bold: true
-                    anchors.left: parent.left
-                    anchors.leftMargin: 20
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
             // Volume Setting
             Rectangle {
                 width: parent.width
@@ -268,7 +279,7 @@ Rectangle {
                     ComboBox {
                         width: 200
                         anchors.verticalCenter: parent.verticalCenter
-                        model: ["Radio", "Bluetooth", "AUX", "USB"]
+                        model: ["Radio", "Bluetooth", "AUX", "Carplay"]
                     }
                 }
             }
