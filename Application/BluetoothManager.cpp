@@ -7,7 +7,8 @@
 #include <QDBusMetaType>
 #include <QSettings>
 #include <QDebug>
-#include <QThread>
+#include <QDBusArgument>
+#include <QDBusVariant>
 
 // Type aliases and Q_DECLARE_METATYPE are in BluetoothManager.h
 
@@ -16,6 +17,7 @@ BluetoothManager::BluetoothManager(QObject *parent)
 {
     qDBusRegisterMetaType<InterfaceMap>();
     qDBusRegisterMetaType<ManagedObjectsMap>();
+    qDBusRegisterMetaType<QMap<QString, QDBusVariant>>();
 
     QDBusConnection bus = QDBusConnection::systemBus();
 
@@ -74,17 +76,34 @@ void BluetoothManager::setPower(bool on)
 
 void BluetoothManager::startDiscovery()
 {
-    if (!m_adapter->isValid()) return;
-    m_adapter->call("StartDiscovery");
+    if (!m_adapter || !m_adapter->isValid()) return;
+
+    // BlueZ 5.56+ requires SetDiscoveryFilter before StartDiscovery
+    // Using empty filter = discover all transport types
+    QDBusInterface adapter("org.bluez", "/org/bluez/hci0",
+                           "org.bluez.Adapter1", QDBusConnection::systemBus());
+
+    QVariantMap filter;
+    filter["Transport"] = QString("auto");
+    adapter.call("SetDiscoveryFilter", filter);
+
+    QDBusMessage reply = m_adapter->call("StartDiscovery");
+    if (reply.type() == QDBusMessage::ErrorMessage)
+        qWarning() << "[BT] StartDiscovery failed:" << reply.errorMessage();
+    else
+        qDebug() << "[BT] Discovery started";
 }
 
 void BluetoothManager::stopDiscovery()
 {
-    if (!m_adapter->isValid()) return;
-    m_adapter->call("StopDiscovery");
+    if (!m_adapter || !m_adapter->isValid()) return;
+    QDBusMessage reply = m_adapter->call("StopDiscovery");
+    if (reply.type() == QDBusMessage::ErrorMessage)
+        qWarning() << "[BT] StopDiscovery failed:" << reply.errorMessage();
 }
 
-void BluetoothManager::connectDevice(const QString &address)
+// Internal helper — performs the actual pair/connect without any disconnect logic
+void BluetoothManager::doConnect(const QString &address)
 {
     QDBusConnection bus = QDBusConnection::systemBus();
     QString path = devicePath(address);
@@ -95,13 +114,10 @@ void BluetoothManager::connectDevice(const QString &address)
         return;
     }
 
-    // Check if already paired
     bool alreadyPaired = device.property("Paired").toBool();
 
     if (!alreadyPaired) {
         qDebug() << "[BT] Device not paired, pairing first:" << address;
-        // Pair first — when Paired property changes, onDevicePropertiesChanged
-        // will add it to the list. Then connect.
         auto *watcher = new QDBusPendingCallWatcher(
             device.asyncCall("Pair"), this);
 
@@ -116,7 +132,6 @@ void BluetoothManager::connectDevice(const QString &address)
                     }
                     qDebug() << "[BT] Paired OK, trusting and connecting:" << address;
 
-                    // Trust the device so iOS shows contacts/other sharing prompts
                     QString devPath = devicePath(address);
                     QDBusInterface props("org.bluez", devPath,
                                          "org.freedesktop.DBus.Properties",
@@ -124,7 +139,6 @@ void BluetoothManager::connectDevice(const QString &address)
                     props.call("Set", "org.bluez.Device1", "Trusted",
                                QVariant::fromValue(QDBusVariant(true)));
 
-                    // Refresh list so UI shows new device, then connect
                     refreshPairedDevices();
                     QDBusInterface dev("org.bluez", devPath,
                                        "org.bluez.Device1", QDBusConnection::systemBus());
@@ -135,12 +149,10 @@ void BluetoothManager::connectDevice(const QString &address)
     } else {
         qDebug() << "[BT] Already paired, connecting:" << address;
 
-        // Check if already connected — if so, BlueZ won't emit PropertiesChanged
-        // so we emit connectedChanged manually to trigger main.cpp wiring
         bool alreadyConnected = device.property("Connected").toBool();
         if (alreadyConnected) {
             qDebug() << "[BT] Device already connected, emitting connectedChanged";
-            refreshPairedDevices();  // update m_connected / m_connectedAddress
+            refreshPairedDevices();
             emit connectedChanged();
         } else {
             device.asyncCall("Connect");
@@ -150,6 +162,35 @@ void BluetoothManager::connectDevice(const QString &address)
         settings.setValue("lastDevice", address);
     }
 }
+
+void BluetoothManager::connectDevice(const QString &address)
+{
+    if (m_switching) {
+        qDebug() << "[BT] Already switching, ignoring connect request for" << address;
+        return;
+    }
+
+    // ── Single-connection policy ─────────────────────────────────────────────
+    if (!m_connectedAddress.isEmpty() && m_connectedAddress != address) {
+        qDebug() << "[BT] Switching from" << m_connectedAddress << "to" << address;
+
+        m_switching = true;            // block signals + re-entry during switch
+        QString switchingFrom = m_connectedAddress;
+        m_connectedAddress.clear();
+        QDBusInterface oldDev("org.bluez", devicePath(switchingFrom),
+                              "org.bluez.Device1", QDBusConnection::systemBus());
+        oldDev.asyncCall("Disconnect");
+
+        QTimer::singleShot(1000, this, [this, address]() {
+            m_switching = false;
+            doConnect(address);
+        });
+        return;
+    }
+
+    doConnect(address);
+}
+
 
 void BluetoothManager::disconnectDevice(const QString &address)
 {
@@ -179,8 +220,7 @@ void BluetoothManager::removeDevice(const QString &address)
             QDBusMessage dcReply = device.call("Disconnect");
             if (dcReply.type() == QDBusMessage::ErrorMessage)
                 qWarning() << "[BT] Disconnect failed (continuing anyway):" << dcReply.errorMessage();
-            else
-                QThread::msleep(500); // brief pause to let BlueZ process the disconnect
+            // Disconnect is async — BlueZ will process it before RemoveDevice
         }
     }
 
@@ -341,6 +381,12 @@ void BluetoothManager::onAdapterPropertiesChanged(
         m_discovering = changed["Discovering"].toBool();
         emit discoveringChanged(m_discovering);
     }
+
+    if (changed.contains("Discoverable")) {
+        m_discoverable = changed["Discoverable"].toBool();
+        qDebug() << "[BT] Discoverable state:" << m_discoverable;
+        emit discoverableChanged();
+    }
 }
 
 void BluetoothManager::onDevicePropertiesChanged(
@@ -379,10 +425,136 @@ void BluetoothManager::onDevicePropertiesChanged(
     }
 
     emit pairedDevicesChanged();
-    emit connectedChanged();
+    if (!m_switching)
+        emit connectedChanged();
 }
 
 QString BluetoothManager::devicePath(const QString &address) const
 {
     return "/org/bluez/hci0/dev_" + QString(address).replace(":", "_");
+}
+
+// ── Discoverable ─────────────────────────────────────────────────────────────
+
+void BluetoothManager::makeDiscoverable(int seconds)
+{
+    if (!m_adapter) return;
+
+    // Set adapter Discoverable + DiscoverableTimeout via Properties.Set
+    QDBusInterface props("org.bluez", m_adapter->path(),
+                         "org.freedesktop.DBus.Properties",
+                         QDBusConnection::systemBus());
+    props.call("Set", "org.bluez.Adapter1", "DiscoverableTimeout",
+               QVariant::fromValue(QDBusVariant((quint32)seconds)));
+    props.call("Set", "org.bluez.Adapter1", "Discoverable",
+               QVariant::fromValue(QDBusVariant(true)));
+
+    m_discoverable        = true;
+    m_discoverableSeconds = seconds;
+    emit discoverableChanged();
+    qDebug() << "[BT] Discoverable for" << seconds << "seconds";
+
+    // Countdown timer — fires every second to update the UI counter
+    if (!m_discoverableTimer) {
+        m_discoverableTimer = new QTimer(this);
+        m_discoverableTimer->setInterval(1000);
+        connect(m_discoverableTimer, &QTimer::timeout, this, [this]() {
+            m_discoverableSeconds--;
+            if (m_discoverableSeconds <= 0) {
+                m_discoverableSeconds = 0;
+                m_discoverable        = false;
+                m_discoverableTimer->stop();
+                qDebug() << "[BT] Discoverable window expired";
+            }
+            emit discoverableChanged();
+        });
+    }
+    m_discoverableTimer->start();
+}
+
+// ── Network / carrier info ────────────────────────────────────────────────
+
+void BluetoothManager::setModemPathForNetwork(const QString &modemPath)
+{
+    if (m_netModemPath == modemPath) return;
+    m_netModemPath = modemPath;
+
+    delete m_netreg;
+    m_netreg = nullptr;
+
+    if (m_netPollTimer) {
+        m_netPollTimer->stop();
+    } else {
+        m_netPollTimer = new QTimer(this);
+        m_netPollTimer->setInterval(15000);
+        connect(m_netPollTimer, &QTimer::timeout, this, &BluetoothManager::refreshNetwork);
+    }
+
+    if (modemPath.isEmpty()) {
+        m_netOperator.clear();
+        m_netStrength    = 0;
+        m_netTechnology.clear();
+        m_netRoaming     = false;
+        emit networkChanged();
+        return;
+    }
+
+    m_netreg = new QDBusInterface("org.ofono", modemPath,
+                                  "org.ofono.NetworkRegistration",
+                                  QDBusConnection::systemBus(), this);
+
+    if (!m_netreg->isValid()) {
+        qWarning() << "[Network] NetworkRegistration not available at" << modemPath;
+        delete m_netreg;
+        m_netreg = nullptr;
+        return;
+    }
+
+    // oFono signal: PropertyChanged(string name, variant value)
+    QDBusConnection::systemBus().connect(
+        "org.ofono", modemPath,
+        "org.ofono.NetworkRegistration", "PropertyChanged",
+        this, SLOT(refreshNetwork()));
+
+    refreshNetwork();
+    m_netPollTimer->start();
+    qDebug() << "[Network] Monitoring network at" << modemPath;
+}
+
+void BluetoothManager::refreshNetwork()
+{
+    if (!m_netreg) return;
+
+    QDBusMessage req = QDBusMessage::createMethodCall(
+        "org.ofono", m_netModemPath,
+        "org.ofono.NetworkRegistration", "GetProperties");
+    QDBusMessage reply = QDBusConnection::systemBus().call(req);
+
+    if (reply.type() != QDBusMessage::ReplyMessage || reply.arguments().isEmpty())
+        return;
+
+    // Copy arg out of the reply before iterating — reply-owned args are read-only
+    QDBusArgument rawArg = reply.arguments().first().value<QDBusArgument>();
+    QMap<QString, QDBusVariant> rawMap;
+    rawArg >> rawMap;
+
+    QVariantMap props;
+    for (auto it = rawMap.cbegin(); it != rawMap.cend(); ++it)
+        props.insert(it.key(), it.value().variant());
+
+    // HFP modem only exposes: Name, Strength, Status, Mode
+    // Technology, Roaming, Battery not available over HFP
+    QString newOp  = props.value("Name",     "").toString();
+    // Strength is a byte 0-100, convert to 0-5 bars
+    int     newSig = qRound(props.value("Strength", 0).toDouble() / 20.0);
+
+    bool changed = (newOp != m_netOperator || newSig != m_netStrength);
+
+    if (changed) {
+        m_netOperator = newOp;
+        m_netStrength = newSig;
+        qDebug() << "[Network]" << m_netOperator
+                 << "signal:" << m_netStrength << "/5";
+        emit networkChanged();
+    }
 }

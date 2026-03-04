@@ -16,11 +16,9 @@ Window {
         function onCallStateChanged() {
             var state = callManager.callState
             if (state === 1 || state === 2 || state === 3) {
-                // Push call page if not already showing it
                 if (stackView.currentItem.toString().indexOf("ActiveCallPage") === -1)
                     stackView.push(activeCallPage)
             } else if (state === 0) {
-                // Pop back when call ends
                 if (stackView.currentItem.toString().indexOf("ActiveCallPage") !== -1)
                     stackView.pop()
             }
@@ -31,183 +29,178 @@ Window {
         anchors.fill: parent
         spacing: 0
 
-        // Top bar - always visible
+        // ── Top bar ───────────────────────────────────────────────────────────
         Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 60
             color: "#2a2a2a"
 
-            // Home button in top left
-            Rectangle {
-                width: 50
-                height: 50
-                color: "#3a3a3a"
-                radius: 5
+            Row {
                 anchors.left: parent.left
+                anchors.leftMargin: 20
                 anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: 10
+                spacing: 12
+
+                // Home button
+                Rectangle {
+                    width: 50; height: 50
+                    color: "#c2c2c2"; radius: 5
+                    anchors.verticalCenter: parent.verticalCenter
+                    Text { text: "⌂"; font.pixelSize: 30; anchors.centerIn: parent }
+                    MouseArea { anchors.fill: parent; onClicked: stackView.pop(null) }
+                }
+
+                Rectangle {
+                    width: 2; height: 30; color: "#c2c2c2"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                // Back button
+                Rectangle {
+                    width: 50; height: 50
+                    color: "#c2c2c2"; radius: 5
+                    anchors.verticalCenter: parent.verticalCenter
+                    Text { text: "↩"; font.pixelSize: 30; anchors.centerIn: parent }
+                    MouseArea { anchors.fill: parent; onClicked: stackView.pop() }
+                }
+            }
+
+            // ── Centre: date | time ───────────────────────────────────────────
+            Row {
+                anchors.centerIn: parent
+                spacing: 12
 
                 Text {
-                    text: "↩"
-                    font.pixelSize: 30
-                    anchors.centerIn: parent
+                    id: dateText
+                    color: "#c2c2c2"
+                    font.pixelSize: 25
+                    anchors.verticalCenter: parent.verticalCenter
+                    Component.onCompleted: text = Qt.formatDate(new Date(), "ddd d MMM")
                 }
 
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: stackView.pop()
+                Rectangle {
+                    width: 2; height: 30; color: "#c2c2c2"
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+
+                Text {
+                    id: clockText
+                    color: "#c2c2c2"
+                    font.pixelSize: 25
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    // Reactively bound — updates instantly when toggled in settings
+                    property bool use24h: systemClock ? systemClock.use24h : true
+
+                    function fmtTime(d) {
+                        return use24h
+                            ? Qt.formatTime(d, "HH:mm")
+                            : Qt.formatTime(d, "hh:mm AP")
+                    }
+
+                    onUse24hChanged: text = fmtTime(new Date())
+
+                    Timer {
+                        interval: 1000; running: true; repeat: true
+                        onTriggered: {
+                            var d = new Date()
+                            clockText.text = clockText.fmtTime(d)
+                            dateText.text  = Qt.formatDate(d, "ddd d MMM")
+                        }
+                    }
+                    Component.onCompleted: text = fmtTime(new Date())
                 }
             }
 
-            Text {
-                text: "Car Headunit"
-                color: "white"
-                font.pixelSize: 24
-                anchors.centerIn: parent
-            }
-
-            // Clock in top right corner
-            Text {
-                id: clockText
-                color: "white"
-                font.pixelSize: 20
+            // ── Right: signal bars + carrier ──────────────────────────────────
+            Row {
                 anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
                 anchors.rightMargin: 20
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 12
 
-                Timer {
-                    interval: 1000
-                    running: true
-                    repeat: true
-                    onTriggered: {
-                        var date = new Date()
-                        clockText.text = Qt.formatTime(date, "hh:mm")
+                // Signal strength bars
+                Row {
+                    id: signalBars
+                    spacing: 4
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: bluetoothManager ? bluetoothManager.connected : false
+
+                    Repeater {
+                        model: 5
+                        Item {
+                            width: 6; height: 26
+                            anchors.verticalCenter: parent.verticalCenter
+                            Rectangle {
+                                width: parent.width
+                                height: 10 + index * 5
+                                radius: 2
+                                anchors.bottom: parent.bottom
+                                color: (bluetoothManager && index < bluetoothManager.networkStrength)
+                                       ? "#177cff" : "#c2c2c2"
+                            }
+                        }
                     }
                 }
 
-                Component.onCompleted: {
-                    var date = new Date()
-                    text = Qt.formatTime(date, "hh:mm")
+                // Carrier name
+                Text {
+                    visible: bluetoothManager ? (bluetoothManager.connected && bluetoothManager.networkOperator !== "") : false
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: (bluetoothManager && bluetoothManager.networkRoaming)
+                          ? bluetoothManager.networkOperator + " ⟳"
+                          : (bluetoothManager ? bluetoothManager.networkOperator : "")
+                    color: "#c2c2c2"
+                    font.pixelSize: 25
+                }
+
+                // Divider
+                Rectangle {
+                    width: 2; height: 30; color: "#c2c2c2"
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: bluetoothManager ? bluetoothManager.connected : false
                 }
             }
         }
 
-        // Main content area with scale/zoom animations
+        // ── Main content ──────────────────────────────────────────────────────
         StackView {
             id: stackView
             Layout.fillWidth: true
             Layout.fillHeight: true
             initialItem: homePage
 
-            // Scale/Zoom animation when pushing
             pushEnter: Transition {
                 ParallelAnimation {
-                    PropertyAnimation {
-                        property: "scale"
-                        from: 0.8
-                        to: 1
-                        duration: 300
-                        easing.type: Easing.OutCubic
-                    }
-                    PropertyAnimation {
-                        property: "opacity"
-                        from: 0
-                        to: 1
-                        duration: 300
-                    }
+                    PropertyAnimation { property: "scale";   from: 0.8; to: 1;   duration: 300; easing.type: Easing.OutCubic }
+                    PropertyAnimation { property: "opacity"; from: 0;   to: 1;   duration: 300 }
                 }
             }
-
             pushExit: Transition {
-                PropertyAnimation {
-                    property: "opacity"
-                    from: 1
-                    to: 0
-                    duration: 300
-                }
+                PropertyAnimation { property: "opacity"; from: 1; to: 0; duration: 300 }
             }
-
             popEnter: Transition {
-                PropertyAnimation {
-                    property: "opacity"
-                    from: 0
-                    to: 1
-                    duration: 300
-                }
+                PropertyAnimation { property: "opacity"; from: 0; to: 1; duration: 300 }
             }
-
             popExit: Transition {
                 ParallelAnimation {
-                    PropertyAnimation {
-                        property: "scale"
-                        from: 1
-                        to: 0.8
-                        duration: 300
-                        easing.type: Easing.OutCubic
-                    }
-                    PropertyAnimation {
-                        property: "opacity"
-                        from: 1
-                        to: 0
-                        duration: 300
-                    }
+                    PropertyAnimation { property: "scale";   from: 1;   to: 0.8; duration: 300; easing.type: Easing.OutCubic }
+                    PropertyAnimation { property: "opacity"; from: 1;   to: 0;   duration: 300 }
                 }
             }
 
-            Component {
-                id: homePage
-                HomePage {}
-            }
-
-            Component {
-                id: mediaPage
-                MediaPage {}
-            }
-
-            Component {
-                id: carplayPage
-                CarplayPage {}
-            }
-
-            Component {
-                id: bluetoothPage
-                PhonePage {}
-            }
-
-            Component {
-                id: activeCallPage
-                ActiveCallPage{}
-            }
-
-            Component {
-                id: settingsPage
-                SettingsPage {}
-            }
-
-            Component {
-                id: lightingPage
-                AmbientLightingPage {}
-            }
-
-            Component{
-                id: bluetoothSettingsPage
-                BluetoothSettingsPage{}
-            }
-
-            Component {
-                id: canbusPage
-                CANBusPage {}
-            }
-
-            Component {
-                id: canRawDataPage
-                CANRawDataPage {}
-            }
-
-            Component {
-                id: climatePage
-                ClimatePage {}
-            }
+            Component { id: homePage;               HomePage                {}  }
+            Component { id: mediaPage;              MediaPage               {}  }
+            Component { id: carplayPage;            CarplayPage             {}  }
+            Component { id: bluetoothPage;          PhonePage               {}  }
+            Component { id: activeCallPage;         ActiveCallPage          {}  }
+            Component { id: settingsPage;           SettingsPage            {}  }
+            Component { id: lightingPage;           AmbientLightingPage     {}  }
+            Component { id: clockSettingsPage;      ClockSettingsPage       {}  }
+            Component { id: bluetoothSettingsPage;  BluetoothSettingsPage   {}  }
+            Component { id: canbusPage;             CANBusPage              {}  }
+            Component { id: canRawDataPage;         CANRawDataPage          {}  }
+            Component { id: climatePage;            ClimatePage             {}  }
         }
     }
 }

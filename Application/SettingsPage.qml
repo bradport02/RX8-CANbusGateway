@@ -90,7 +90,7 @@ Rectangle {
                 }
             }
 
-            // CAN Bus Button
+            // Ambient Lighting
             Rectangle {
                 width: parent.width
                 height: 80
@@ -135,6 +135,50 @@ Rectangle {
                 }
             }
 
+            // Ambient Lighting
+            Rectangle {
+                width: parent.width
+                height: 80
+                color: "#1a1a1a"
+                border.color: "#3a3a3a"
+                border.width: 1
+
+                Row {
+                    anchors.fill: parent
+                    anchors.margins: 20
+                    spacing: 20
+
+                    Column {
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 5
+                        width: parent.width - 80
+
+                        Text {
+                            text: "Date and Time"
+                            color: "white"
+                            font.pixelSize: 18
+                        }
+
+                        Text {
+                            text: "Adjust the system date and time."
+                            color: "#888888"
+                            font.pixelSize: 14
+                        }
+                    }
+
+                    Text {
+                        text: "›"
+                        color: "#888888"
+                        font.pixelSize: 32
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: stackView.push(clockSettingsPage)
+                }
+            }
             // Another Section
             Rectangle {
                 width: parent.width

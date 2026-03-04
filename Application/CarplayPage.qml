@@ -5,14 +5,12 @@ Rectangle {
     id: carplayPage
     color: "#1a1a1a"
 
-    // Launch CarPlay when this page becomes visible
     Component.onCompleted: {
         carplayController.launchCarPlay()
     }
 
-    Component.onDestruction: {
-        carplayController.stopCarPlay()
-    }
+    // Do NOT call stopCarPlay() here — it causes a double-stop race.
+    // CarPlay cleanup is handled by the Exit button or process finishing naturally.
 
     Column {
         anchors.centerIn: parent
@@ -32,13 +30,11 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
         }
 
-        // Manual exit button (backup)
         Button {
             text: "Exit CarPlay"
             width: 200
             height: 60
             anchors.horizontalCenter: parent.horizontalCenter
-
             contentItem: Text {
                 text: parent.text
                 color: "white"
@@ -46,15 +42,13 @@ Rectangle {
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
             }
-
             background: Rectangle {
                 color: "#ff4444"
                 radius: 10
             }
-
             onClicked: {
                 carplayController.stopCarPlay()
-                stackView.pop()  // Go back to home
+                stackView.pop(null)
             }
         }
     }

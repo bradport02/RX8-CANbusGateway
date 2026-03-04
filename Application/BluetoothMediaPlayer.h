@@ -16,7 +16,6 @@ class BluetoothMediaPlayer : public QObject
     Q_PROPERTY(quint32 duration    READ duration    NOTIFY trackChanged)
     Q_PROPERTY(quint32 position    READ position    NOTIFY positionChanged)
     Q_PROPERTY(QString status      READ status      NOTIFY statusChanged)
-    Q_PROPERTY(QString artworkPath READ artworkPath NOTIFY artworkChanged)
 
 public:
     explicit BluetoothMediaPlayer(QObject *parent = nullptr);
@@ -27,7 +26,6 @@ public:
     quint32 duration()    const { return m_duration; }
     quint32 position()    const { return m_position; }
     QString status()      const { return m_status; }
-    QString artworkPath() const { return m_artworkPath; }
 
 public slots:
     void setPlayerPath(const QString &path);
@@ -40,7 +38,6 @@ signals:
     void trackChanged();
     void positionChanged();
     void statusChanged();
-    void artworkChanged();
 
 private slots:
     void pollPosition();
@@ -50,7 +47,6 @@ private slots:
 
 private:
     void tryConnectPlayer(const QString &basePath, int attempt);
-    void fetchArtwork(const QString &imgHandle, quint16 obexPort);
     void connectToPlayer(const QString &path);
     void refreshTrack();
     void refreshPosition();
@@ -65,7 +61,6 @@ private:
     quint32  m_duration    = 0;
     quint32  m_position    = 0;
     QString  m_status;
-    QString  m_artworkPath;
     QString  m_playerPath;
 };
 

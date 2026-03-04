@@ -249,54 +249,98 @@ Rectangle {
             }
         }
 
-        // ── Scan button ───────────────────────────────────────────────────────
+        // ── Scan + Discoverable buttons ───────────────────────────────────────
         Rectangle {
             width: parent.width
-            height: 50
+            height: 58
             color: "#111111"
             visible: bluetoothManager.powered
 
-            Rectangle {
+            Row {
                 anchors.centerIn: parent
-                width: 180; height: 34; radius: 8
-                color: bluetoothManager.discovering ? "#1a2a4a" : "#1e2035"
-                border.color: bluetoothManager.discovering ? "#4a6fc7" : "#333355"
-                border.width: 1
+                spacing: 12
 
-                Row {
-                    anchors.centerIn: parent
-                    spacing: 8
+                // Scan button
+                Rectangle {
+                    width: 180; height: 36; radius: 8
+                    color: bluetoothManager.discovering ? "#1a2a4a" : "#1e2035"
+                    border.color: bluetoothManager.discovering ? "#4a6fc7" : "#333355"
+                    border.width: 1
 
-                    // Spinning dot when discovering
-                    Rectangle {
-                        width: 8; height: 8; radius: 4
-                        color: "#4a6fc7"
-                        visible: bluetoothManager.discovering
-                        anchors.verticalCenter: parent.verticalCenter
-                        SequentialAnimation on opacity {
-                            running: bluetoothManager.discovering
-                            loops: Animation.Infinite
-                            NumberAnimation { to: 0.2; duration: 500 }
-                            NumberAnimation { to: 1.0; duration: 500 }
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 8
+
+                        Rectangle {
+                            width: 8; height: 8; radius: 4
+                            color: "#4a6fc7"
+                            visible: bluetoothManager.discovering
+                            anchors.verticalCenter: parent.verticalCenter
+                            SequentialAnimation on opacity {
+                                running: bluetoothManager.discovering
+                                loops: Animation.Infinite
+                                NumberAnimation { to: 0.2; duration: 500 }
+                                NumberAnimation { to: 1.0; duration: 500 }
+                            }
+                        }
+
+                        Text {
+                            text: bluetoothManager.discovering ? "Stop Scanning" : "Scan for Devices"
+                            color: bluetoothManager.discovering ? "#7ab3ff" : "#aaaacc"
+                            font.pixelSize: 12
+                            font.bold: bluetoothManager.discovering
+                            anchors.verticalCenter: parent.verticalCenter
                         }
                     }
 
-                    Text {
-                        text: bluetoothManager.discovering ? "Stop Scanning" : "Scan for Devices"
-                        color: bluetoothManager.discovering ? "#7ab3ff" : "#aaaacc"
-                        font.pixelSize: 13
-                        font.bold: bluetoothManager.discovering
-                        anchors.verticalCenter: parent.verticalCenter
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: bluetoothManager.discovering
+                                   ? bluetoothManager.stopDiscovery()
+                                   : bluetoothManager.startDiscovery()
                     }
                 }
 
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: {
-                        if (bluetoothManager.discovering)
-                            bluetoothManager.stopDiscovery()
-                        else
-                            bluetoothManager.startDiscovery()
+                // Discoverable button — 30s countdown driven by backend
+                Rectangle {
+                    id: discoverableBtn
+                    width: 180; height: 36; radius: 8
+                    color: bluetoothManager.discoverable ? "#1a3a2a" : "#1e2035"
+                    border.color: bluetoothManager.discoverable ? "#2a7a4a" : "#333355"
+                    border.width: 1
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 8
+
+                        // Pulsing dot when discoverable
+                        Rectangle {
+                            width: 8; height: 8; radius: 4
+                            color: "#2aff7a"
+                            visible: bluetoothManager.discoverable
+                            anchors.verticalCenter: parent.verticalCenter
+                            SequentialAnimation on opacity {
+                                running: bluetoothManager.discoverable
+                                loops: Animation.Infinite
+                                NumberAnimation { to: 0.2; duration: 600 }
+                                NumberAnimation { to: 1.0; duration: 600 }
+                            }
+                        }
+
+                        Text {
+                            text: bluetoothManager.discoverable
+                                  ? "Visible  " + bluetoothManager.discoverableSeconds + "s"
+                                  : "Make Discoverable"
+                            color: bluetoothManager.discoverable ? "#2aff7a" : "#aaaacc"
+                            font.pixelSize: 12
+                            font.bold: bluetoothManager.discoverable
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        onClicked: bluetoothManager.makeDiscoverable(30)
                     }
                 }
             }

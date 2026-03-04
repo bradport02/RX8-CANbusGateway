@@ -49,7 +49,8 @@ private:
     bool          m_retryPending   = false;  // true while retry timer is queued
     QProcess     *m_syncProcess    = nullptr;
     QString       m_deviceAddress;
-    int           m_retryCount     = 0;
+    int           m_retryCount        = 0;
+    int           m_cancelGeneration  = 0;  // incremented on every cancelSync()
     static constexpr int MAX_RETRIES = 5;
 };
 

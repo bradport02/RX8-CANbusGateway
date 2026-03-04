@@ -47,6 +47,8 @@ qt_add_qml_module(appApplication
         QML_FILES AuxView.qml
         SOURCES BluetoothMediaPlayer.cpp
         SOURCES BluetoothMediaPlayer.h
+        QML_FILES ClockSettingsPage.qml
+        SOURCES SystemClock.h
 )
 
 set_target_properties(appApplication PROPERTIES

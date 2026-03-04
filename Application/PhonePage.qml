@@ -277,7 +277,7 @@ Rectangle {
 
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: callManager.dial(model.number)
+                        onClicked: callManager.dial(model.number.replace(/[^\d+]/g, ""))
                     }
                 }
 
@@ -286,7 +286,7 @@ Rectangle {
                     anchors.fill: parent
                     onClicked: {
                         // Pre-fill dialpad
-                        dialInput.text = model.number
+                        dialInput.text = model.number.replace(/[^\d+]/g, "")
                         activeTab = 1
                     }
                 }
@@ -486,7 +486,7 @@ Rectangle {
                     if (callManager.callState === 2)       // Active
                         callManager.hangup()
                     else if (dialInput.text.length > 0)
-                        callManager.dial(dialInput.text)
+                        callManager.dial(dialInput.text.replace(/[^\d+]/g, ""))
                 }
             }
         }

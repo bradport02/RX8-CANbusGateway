@@ -141,18 +141,6 @@ void BluetoothMediaPlayer::refreshTrack()
     qDebug() << "[Media] Track:" << m_artist << "-" << m_title
              << "(" << m_album << ") duration:" << m_duration << "ms";
 
-    // ImgHandle is in Track dict; ObexPort is a player-level property
-    QString imgHandle = track.value("ImgHandle", "").toString();
-    if (!imgHandle.isEmpty()) {
-        QVariant obexVar = getPlayerProperty(m_player->path(), "ObexPort");
-        quint16 obexPort = obexVar.isValid() ? (quint16)obexVar.toUInt() : 0;
-        qDebug() << "[Media] ImgHandle:" << imgHandle << "ObexPort:" << obexPort;
-        if (obexPort > 0)
-            fetchArtwork(imgHandle, obexPort);
-        else
-            qWarning() << "[Media] ObexPort not available - skipping artwork";
-    }
-
     emit trackChanged();
 }
 
@@ -209,110 +197,6 @@ void BluetoothMediaPlayer::onPropertiesChanged(const QString &interface,
         m_position = changed.value("Position").toUInt();
         emit positionChanged();
     }
-}
-
-void BluetoothMediaPlayer::fetchArtwork(const QString &imgHandle, quint16 obexPort)
-{
-    const QString scriptPath = "/tmp/headunit_art_fetch.py";
-    const QString outPath    = "/tmp/headunit_artwork.jpg";
-
-    // Extract BT address from player path e.g. /org/bluez/hci0/dev_DC_53_92_33_50_56/player0
-    QString playerPath = m_player->path();
-    // Strip everything up to dev_ prefix, then strip /playerN suffix
-    QString addr = playerPath;
-    int devIdx = addr.indexOf("/dev_");
-    if (devIdx >= 0) addr = addr.mid(devIdx + 5); // skip "/dev_"
-    int slashIdx = addr.indexOf('/');
-    if (slashIdx >= 0) addr = addr.left(slashIdx); // strip /player0
-    addr.replace("_", ":");
-
-    QFile script(scriptPath);
-    if (!script.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
-        return;
-
-    QTextStream s(&script);
-    s << QString(R"(
-import socket, struct, os, sys
-
-addr   = '%1'
-port   = %2
-handle = '%3'
-out    = '%4'
-
-def obex_connect():
-    sock = socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM)
-    sock.settimeout(8)
-    sock.connect((addr, port))
-    pkt = bytes([0x80, 0x00, 0x07, 0x10, 0x00, 0xFF, 0xFF])
-    sock.send(pkt)
-    resp = sock.recv(64)
-    if resp[0] != 0xA0:
-        raise Exception('OBEX connect failed: ' + hex(resp[0]))
-    return sock
-
-try:
-    sock = obex_connect()
-
-    img_type = b'x-bt/img-thumbnail\x00'
-    handle_b = handle.encode() + b'\x00'
-
-    type_hdr   = bytes([0x42]) + struct.pack('>H', 3 + len(img_type)) + img_type
-    handle_hdr = bytes([0x30]) + struct.pack('>H', 3 + len(handle_b)) + handle_b
-
-    body = type_hdr + handle_hdr
-    pkt  = bytes([0x83]) + struct.pack('>H', 3 + len(body)) + body
-    sock.send(pkt)
-
-    data = b''
-    while True:
-        resp = sock.recv(4096)
-        if len(resp) < 3:
-            break
-        code    = resp[0]
-        payload = resp[3:]
-        i = 0
-        while i < len(payload) - 2:
-            hid  = payload[i]
-            hlen = struct.unpack('>H', payload[i+1:i+3])[0]
-            if hid in (0x48, 0x49):
-                data += payload[i+3:i+hlen]
-            i += max(hlen, 1)
-        if code == 0xA0:
-            break
-        if code != 0x90:
-            break
-
-    sock.close()
-    if data:
-        with open(out, 'wb') as f:
-            f.write(data)
-        print('OK:' + out)
-    else:
-        print('ERROR: no image data received', file=sys.stderr)
-        sys.exit(1)
-except Exception as e:
-    print('ERROR:' + str(e), file=sys.stderr)
-    sys.exit(1)
-)").arg(addr).arg(obexPort).arg(imgHandle).arg(outPath);
-    script.close();
-
-    QProcess *proc = new QProcess(this);
-    proc->setProgram("python3");
-    proc->setArguments({scriptPath});
-    connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
-            this, [this, proc, outPath](int code, QProcess::ExitStatus) {
-                if (code == 0 && QFile::exists(outPath)) {
-                    m_artworkPath = outPath;
-                    qDebug() << "[Media] Artwork fetched:" << outPath;
-                    emit artworkChanged();
-                } else {
-                    qWarning() << "[Media] Artwork fetch failed:"
-                               << proc->readAllStandardError().trimmed();
-                }
-                proc->deleteLater();
-            });
-    proc->start();
-    qDebug() << "[Media] Fetching artwork handle:" << imgHandle << "port:" << obexPort;
 }
 
 void BluetoothMediaPlayer::play()     { if (m_player) m_player->call("Play");     }

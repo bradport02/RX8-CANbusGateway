@@ -17,13 +17,15 @@ public:
 signals:
     void carplayExited(int exitCode);
     void shouldReturnHome();
+    void carplayStarted();   // emitted when process launches successfully
+    void carplayStopped();   // emitted when process ends for any reason
 
 private slots:
     void handleProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
     void handleProcessError(QProcess::ProcessError error);
 
 private:
-    QProcess *carplayProcess;
+    QProcess *carplayProcess = nullptr;
 };
 
 #endif

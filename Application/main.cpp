@@ -10,6 +10,8 @@
 #include "CallManager.h"
 #include "ContactsManager.h"
 #include "BluetoothMediaPlayer.h"
+#include "SystemClock.h"
+#include "ambientController.h"
 
 int main(int argc, char *argv[])
 {
@@ -35,11 +37,15 @@ int main(int argc, char *argv[])
     CallManager          callManager;
     ContactsManager      contactsManager;
     BluetoothMediaPlayer mediaPlayer;
+    SystemClock          systemClock;
+    AmbientController    ambientController;
 
     engine.rootContext()->setContextProperty("bluetoothManager",  &bluetoothManager);
     engine.rootContext()->setContextProperty("callManager",       &callManager);
     engine.rootContext()->setContextProperty("contactsManager",   &contactsManager);
     engine.rootContext()->setContextProperty("mediaPlayer",        &mediaPlayer);
+    engine.rootContext()->setContextProperty("systemClock",         &systemClock);
+    engine.rootContext()->setContextProperty("ambientController",   &ambientController);
 
     // ── Wire: phone connects → set oFono modem path + auto-sync contacts ──────
     // Use raw pointers — lambdas can't safely capture local references across
@@ -80,6 +86,7 @@ int main(int argc, char *argv[])
 
             qDebug() << "[Main] Phone connected. Modem path:" << modemPath;
             callMgrPtr->setModemPath(modemPath);
+            bluetoothManager.setModemPathForNetwork(modemPath);
 
             // Set AVRCP media player path
             // Pass base device path — BluetoothMediaPlayer appends /player0 etc.
@@ -101,7 +108,24 @@ int main(int argc, char *argv[])
         }
         );
 
-    // ── Existing CarPlay signal ───────────────────────────────────────────────
+    // ── CarPlay ↔ Bluetooth coordination ─────────────────────────────────────
+    // Disconnect BT when CarPlay starts (avoids audio/HFP conflicts)
+    QObject::connect(&carplayController, &CarPlayController::carplayStarted,
+                     [&bluetoothManager]() {
+                         qDebug() << "[Main] CarPlay started — disconnecting Bluetooth";
+                         if (!bluetoothManager.connectedAddress().isEmpty())
+                             bluetoothManager.disconnectDevice(bluetoothManager.connectedAddress());
+                     });
+
+    // Reconnect last BT device when CarPlay stops
+    BluetoothManager *btPtr = &bluetoothManager;
+    QObject::connect(&carplayController, &CarPlayController::carplayStopped,
+                     [btPtr]() {
+                         qDebug() << "[Main] CarPlay stopped — reconnecting Bluetooth";
+                         QTimer::singleShot(1500, btPtr, &BluetoothManager::connectLastDevice);
+                     });
+
+    // Return to home screen when CarPlay exits with code 42
     QObject::connect(&carplayController, &CarPlayController::shouldReturnHome, [&engine]() {
         QObject *rootObject = engine.rootObjects().first();
         if (rootObject) {

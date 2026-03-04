@@ -110,30 +110,18 @@ manager = dbus.Interface(
 )
 
 try:
-    session = manager.CreateSession(addr, {'Target': dbus.String('pbap')})
+    session = manager.CreateSession(addr, {'Target': 'pbap'})
     pb = dbus.Interface(bus.get_object('org.bluez.obex', session),
                         'org.bluez.obex.PhonebookAccess1')
-
-    # Select the main phonebook on the phone's internal storage
     pb.Select('int', 'pb')
 
-    # Get total contact count so we know how many to request
-    try:
-        size = pb.GetSize()
-        print('INFO: Phonebook size = ' + str(size), file=sys.stderr)
-    except Exception:
-        size = 65535  # fallback if GetSize not supported
-
-    # PullAll with explicit MaxListCount to get all contacts in one shot
     transfer, props = pb.PullAll('', {
         'Format':          dbus.String('vcard30'),
-        'MaxListCount':    dbus.UInt16(min(int(size), 65535)),
+        'MaxListCount':    dbus.UInt16(65535),
         'ListStartOffset': dbus.UInt16(0),
-        'Fields':          dbus.Array(['VERSION','FN','TEL','N'], signature='s'),
     })
     fname = str(props.get('Filename', ''))
 
-    # Wait up to 60s for the transfer file to appear and be non-empty
     for _ in range(60):
         time.sleep(1)
         if os.path.exists(fname) and os.path.getsize(fname) > 0:
@@ -144,7 +132,7 @@ try:
             print(f.read(), end='')
         os.remove(fname)
     else:
-        print('ERROR: Transfer file never appeared: ' + fname, file=sys.stderr)
+        print('ERROR: transfer file never appeared', file=sys.stderr)
         sys.exit(1)
 
     manager.RemoveSession(session)
@@ -195,11 +183,13 @@ void ContactsManager::onSyncFinished(int exitCode)
             qDebug() << "[Contacts] Retry" << m_retryCount << "of" << MAX_RETRIES
                      << "in" << delayMs / 1000 << "seconds...";
             m_retryPending = true;
-            QTimer::singleShot(delayMs, this, [this]() {
-                if (m_retryPending) {
-                    m_retryPending = false;
-                    attemptSync();
-                }
+            int expectedGeneration = m_cancelGeneration;
+            QTimer::singleShot(delayMs, this, [this, expectedGeneration]() {
+                // Abort if cancelSync() was called while we were waiting
+                if (!m_retryPending || m_cancelGeneration != expectedGeneration)
+                    return;
+                m_retryPending = false;
+                attemptSync();
             });
         } else {
             qWarning() << "[Contacts] All retries exhausted — contacts unavailable";
@@ -242,10 +232,10 @@ void ContactsManager::parseAndSaveVCard(const QString &filePath)
     QSqlQuery ins(m_db);
     ins.prepare("INSERT INTO contacts (name, phone_type, number) VALUES (?,?,?)");
 
-    QStringList cards = content.split("BEGIN:VCARD", Qt::SkipEmptyParts);
+    const QStringList cards = content.split("BEGIN:VCARD", Qt::SkipEmptyParts);
     int saved = 0;
 
-    for (const QString &card : cards) {
+    for (const QString &card : qAsConst(cards)) {
         QString name;
         QStringList phones;
         QStringList types;
@@ -289,10 +279,16 @@ ContactsManager::~ContactsManager()
 
 void ContactsManager::cancelSync()
 {
-    // Kill any running process immediately
+    // Increment cancel generation — any pending singleShot retries with an
+    // older generation will see the mismatch and abort without calling attemptSync
+    m_cancelGeneration++;
+
     if (m_syncProcess) {
+        // Disconnect finished signal BEFORE killing — prevents the finished
+        // handler firing on a process we've already nulled out
+        m_syncProcess->disconnect();
         m_syncProcess->kill();
-        m_syncProcess->waitForFinished(500);
+        // deleteLater is safe — Qt will clean up after the event loop
         m_syncProcess->deleteLater();
         m_syncProcess = nullptr;
     }
