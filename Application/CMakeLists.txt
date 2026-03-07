@@ -33,8 +33,8 @@ qt_add_qml_module(appApplication
         carplayController.cpp
         canController.h
         canController.cpp
-        ambientController.h
-        ambientController.cpp
+
+
         BluetoothManager.h
         BluetoothManager.cpp
         CallManager.h
@@ -49,6 +49,7 @@ qt_add_qml_module(appApplication
         SOURCES BluetoothMediaPlayer.h
         QML_FILES ClockSettingsPage.qml
         SOURCES SystemClock.h
+        QML_FILES AudioSettingsPage.qml
 )
 
 set_target_properties(appApplication PROPERTIES

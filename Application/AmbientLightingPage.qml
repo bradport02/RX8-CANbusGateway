@@ -1,16 +1,33 @@
 import QtQuick
 import QtQuick.Controls
+import Qt.labs.settings 1.0
 
 Rectangle {
     id: ambientLightingPage
     color: "#1a1a1a"
+    Settings {
+        id: settings
+        category: "lighting"
+        property int   selectedR:   255
+        property int   selectedG:   100
+        property int   selectedB:   0
+        property int   brightness:  80
+        property bool  lightsOn:    true
+    }
+    // Import from settings
+    property int   selectedR:   settings.selectedR
+    property int   selectedG:   settings.selectedG
+    property int   selectedB:   settings.selectedB
+    property int   brightness:  settings.brightness
+    property bool  lightsOn:    settings.lightsOn
 
-    // ── Exposed properties (bind these to your lighting controller) ──────────
-    property int   selectedR:   255
-    property int   selectedG:   100
-    property int   selectedB:   0
-    property int   brightness:  80
-    property bool  lightsOn:    true
+    // Persist on every change
+    onSelectedRChanged:   settings.selectedR   = selectedR //; sendAmbientLighting(R,G,B,brightness,LightOn) }
+    onSelectedGChanged:   settings.selectedG   = selectedG
+    onSelectedBChanged:   settings.selectedB   = selectedB
+    onBrightnessChanged:  settings.brightness  = brightness
+    onLightsOnChanged:    settings.lightsOn    = lightsOn
+
 
 
     // ── Internal helpers ─────────────────────────────────────────────────────
@@ -27,11 +44,11 @@ Rectangle {
     }
 
     // Notify C++ controller whenever colour or brightness changes
-    onSelectedRChanged:   ambientController.setColour(selectedR, selectedG, selectedB)
-    onSelectedGChanged:   ambientController.setColour(selectedR, selectedG, selectedB)
-    onSelectedBChanged:   ambientController.setColour(selectedR, selectedG, selectedB)
-    onBrightnessChanged:  ambientController.setBrightness(brightness)
-    onLightsOnChanged:    ambientController.setPower(lightsOn)
+    //onSelectedRChanged:   ambientController.setColour(selectedR, selectedG, selectedB)
+    //onSelectedGChanged:   ambientController.setColour(selectedR, selectedG, selectedB)
+    //onSelectedBChanged:   ambientController.setColour(selectedR, selectedG, selectedB)
+    //onBrightnessChanged:  ambientController.setBrightness(brightness)
+    //onLightsOnChanged:    ambientController.setPower(lightsOn)
 
     // ── Colour presets data ──────────────────────────────────────────────────
     property var presets: [
@@ -96,6 +113,40 @@ Rectangle {
                     id: wheelCanvas
                     anchors.fill: parent
                     antialiasing: true
+
+                    // Set the cursor to be at the last set colour
+                    Component.onCompleted: {
+                        var cx = width / 2
+                        var cy = height / 2
+                        var r  = Math.min(cx, cy) - 1
+
+                        // Convert RGB back to hue + saturation
+                        var rn = selectedR / 255
+                        var gn = selectedG / 255
+                        var bn = selectedB / 255
+
+                        var max = Math.max(rn, gn, bn)
+                        var min = Math.min(rn, gn, bn)
+                        var delta = max - min
+
+                        // Saturation = how far from centre (0=white=centre, 1=edge)
+                        var sat = (max === 0) ? 0 : delta / max
+
+                        // Hue in degrees
+                        var hue = 0
+                        if (delta > 0) {
+                            if (max === rn)      hue = 60 * (((gn - bn) / delta) % 6)
+                            else if (max === gn) hue = 60 * (((bn - rn) / delta) + 2)
+                            else                 hue = 60 * (((rn - gn) / delta) + 4)
+                        }
+                        if (hue < 0) hue += 360
+
+                        // Convert polar (hue, sat) back to canvas x/y
+                        var angle = hue * Math.PI / 180
+                        var dist  = sat * r
+                        cursor.x = (cx + Math.cos(angle) * dist) - cursor.width  / 2
+                        cursor.y = (cy + Math.sin(angle) * dist) - cursor.height / 2
+                    }
 
                     onPaint: {
                         var ctx = getContext("2d")

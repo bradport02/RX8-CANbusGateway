@@ -223,6 +223,51 @@ Rectangle {
                 }
             }
 
+            // Tone Settings
+            Rectangle {
+                width: parent.width
+                height: 80
+                color: "#1a1a1a"
+                border.color: "#3a3a3a"
+                border.width: 1
+
+                Row {
+                    anchors.fill: parent
+                    anchors.margins: 20
+                    spacing: 20
+
+                    Column {
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 5
+                        width: parent.width - 80
+
+                        Text {
+                            text: "Tone Settings"
+                            color: "white"
+                            font.pixelSize: 18
+                        }
+
+                        Text {
+                            text: "Adjust Bass, Mids, Trebble, Fader and Balance."
+                            color: "#888888"
+                            font.pixelSize: 14
+                        }
+                    }
+
+                    Text {
+                        text: "›"
+                        color: "#888888"
+                        font.pixelSize: 32
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: stackView.push(audioSettingsPage)
+                }
+            }
+
             // Bluetooth Connection
             Rectangle {
                 width: parent.width
@@ -265,37 +310,6 @@ Rectangle {
                 MouseArea {
                     anchors.fill: parent
                     onClicked: stackView.push(bluetoothSettingsPage)
-                }
-            }
-
-            // Volume Setting
-            Rectangle {
-                width: parent.width
-                height: 80
-                color: "#1a1a1a"
-                border.color: "#3a3a3a"
-                border.width: 1
-
-                Row {
-                    anchors.fill: parent
-                    anchors.margins: 20
-                    spacing: 20
-
-                    Text {
-                        text: "Volume"
-                        color: "white"
-                        font.pixelSize: 18
-                        anchors.verticalCenter: parent.verticalCenter
-                        width: 150
-                    }
-
-                    Slider {
-                        width: parent.width - 170
-                        anchors.verticalCenter: parent.verticalCenter
-                        from: 0
-                        to: 100
-                        value: 50
-                    }
                 }
             }
 

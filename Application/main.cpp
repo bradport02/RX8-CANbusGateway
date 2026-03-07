@@ -11,7 +11,6 @@
 #include "ContactsManager.h"
 #include "BluetoothMediaPlayer.h"
 #include "SystemClock.h"
-#include "ambientController.h"
 
 int main(int argc, char *argv[])
 {
@@ -38,14 +37,12 @@ int main(int argc, char *argv[])
     ContactsManager      contactsManager;
     BluetoothMediaPlayer mediaPlayer;
     SystemClock          systemClock;
-    AmbientController    ambientController;
 
     engine.rootContext()->setContextProperty("bluetoothManager",  &bluetoothManager);
     engine.rootContext()->setContextProperty("callManager",       &callManager);
     engine.rootContext()->setContextProperty("contactsManager",   &contactsManager);
     engine.rootContext()->setContextProperty("mediaPlayer",        &mediaPlayer);
     engine.rootContext()->setContextProperty("systemClock",         &systemClock);
-    engine.rootContext()->setContextProperty("ambientController",   &ambientController);
 
     // ── Wire: phone connects → set oFono modem path + auto-sync contacts ──────
     // Use raw pointers — lambdas can't safely capture local references across
@@ -142,6 +139,13 @@ int main(int argc, char *argv[])
 
     if (engine.rootObjects().isEmpty())
         return -1;
+
+    // ── Wire volume slider signal → UART ──────────────────────────────────────
+    QObject *rootObj = engine.rootObjects().first();
+    UARTController *uartPtr = &uartController;
+    bool volConnected = QObject::connect(rootObj, SIGNAL(volumeChangeRequested(int)),
+                                         uartPtr,  SLOT(onVolumeChanged(int)));
+    qDebug() << "[Volume] Signal connected:" << volConnected;
 
     // ── Auto-connect to last known device 2s after startup ───────────────────
     QTimer::singleShot(2000, &bluetoothManager, &BluetoothManager::connectLastDevice);
