@@ -6,6 +6,7 @@ Rectangle {
     color: "#1a1a1a"
 
     Component.onCompleted: {
+        uartController.sendLCDText("Carplay")
         carplayController.launchCarPlay()
     }
 

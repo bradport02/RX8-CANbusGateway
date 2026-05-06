@@ -8,6 +8,8 @@ Rectangle {
     // ── Active source ─────────────────────────────────────────────────────────
     property int activeSource: 0   // 0=Radio, 1=Bluetooth, 2=AUX, 3=CD, 4=Carplay
 
+    property string activeSourceText: "Radio"
+
     readonly property var sources: [
         { name: "Radio",     icon: "📻" },
         { name: "Bluetooth", icon: "🎵" },
@@ -77,9 +79,20 @@ Rectangle {
                         }
                     }
 
+                    function sourceView() {
+                        return activeSource === 0 ? "Radio"
+                             : activeSource === 1 ? "BT Music"
+                             : activeSource === 2 ? "Aux Input"
+                             : "CD Player"
+                    }
+
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: mediaPage.activeSource = index
+                        onClicked: {
+                            mediaPage.activeSource = index
+                            uartController.sendLCDText(sourceView())
+                            uartController.send(0x16,activeSource)
+                        }
                     }
                 }
             }

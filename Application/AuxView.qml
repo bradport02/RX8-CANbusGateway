@@ -3,6 +3,10 @@ import QtQuick
 Rectangle {
     color: "#111118"
 
+    Component.onCompleted: {
+        uartController.sendLCDText("Aux Input")
+    }
+
     Column {
         anchors.centerIn: parent
         spacing: 20

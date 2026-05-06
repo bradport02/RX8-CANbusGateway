@@ -4,6 +4,10 @@ import QtQuick.Controls
 Rectangle {
     color: "#1a1a1a"
 
+    Component.onCompleted: {
+        uartController.sendLCDText("Settings")
+    }
+
     Flickable {
         anchors.fill: parent
         contentHeight: settingsColumn.height
@@ -266,6 +270,8 @@ Rectangle {
                     anchors.fill: parent
                     onClicked: stackView.push(audioSettingsPage)
                 }
+
+
             }
 
             // Bluetooth Connection

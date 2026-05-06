@@ -6,6 +6,13 @@ Rectangle {
     id: climateControlPage
     color: "#1a1a1a"
 
+
+    Component.onCompleted: {
+        uartController.sendLCDText("Climate")
+        // Request current climate state from STM32 on page load
+        uartController.send(0x0E, 0)
+    }
+
     // ── Persistent settings ───────────────────────────────────────────────────
     Settings {
         id: settings
@@ -17,6 +24,33 @@ Rectangle {
         property string ventMode:   "face"
         property bool recirculation: false
         property bool autoMode:     false
+    }
+
+    Connections {
+        target: uartController
+        function onClimateStatusReceived(status) {
+            // Reconstruct temperature float from BCD digits
+            temperature = status.tempTens * 10
+                        + status.tempUnits
+                        + status.tempDecimal * 0.1
+
+            fanSpeed    = status.fanSpeed
+            acEnabled   = status.acEnabled
+            autoMode    = status.autoEnabled
+            recirculation = status.circMode === 1
+
+            // Map ventMode int back to string
+            if      (status.ventMode === 0) ventMode = "face"
+            else if (status.ventMode === 1) ventMode = "feetdemist"
+            else if (status.ventMode === 2) ventMode = "feetface"
+            else                            ventMode = "feet"
+
+            // demistEnabled — use front demist as primary indicator
+            demistEnabled = status.demistFront
+
+            console.log("[Climate] Synced from STM32 — Temp:",
+                        temperature, "Fan:", fanSpeed)
+        }
     }
 
     // ── Climate state — initialised from saved settings ───────────────────────
@@ -42,7 +76,10 @@ Rectangle {
         return (t % 1 === 0) ? t.toFixed(0) : t.toFixed(1)
     }
     function ventModeInt() {
-        return ventMode === "face" ? 0 : ventMode === "feet" ? 1 : ventMode === "both" ? 2 : 3
+        return ventMode === "face" ? 0
+             : ventMode === "feetdemist"       ? 1
+             : ventMode === "feetface"   ? 2
+             : 3  // feet
     }
 
     Column {
@@ -98,10 +135,7 @@ Rectangle {
                                 id: tempUpArea
                                 anchors.fill: parent
                                 onClicked: {
-                                    if (temperature < 32.0) {
-                                        temperature = Math.round((temperature + 0.5) * 10) / 10
-                                        uartController.sendTemperature(0x03, temperature)
-                                    }
+                                    uartController.sendTemperature(0x04, temperature)
                                 }
                             }
                         }
@@ -140,10 +174,7 @@ Rectangle {
                                 id: tempDownArea
                                 anchors.fill: parent
                                 onClicked: {
-                                    if (temperature > 15.0) {
-                                        temperature = Math.round((temperature - 0.5) * 10) / 10
-                                        uartController.sendTemperature(0x04, temperature)
-                                    }
+                                    uartController.sendTemperature(0x05, temperature)
                                 }
                             }
                         }
@@ -174,10 +205,7 @@ Rectangle {
                                 id: fanUpArea
                                 anchors.fill: parent
                                 onClicked: {
-                                    if (fanSpeed < 7) {
-                                        fanSpeed++
-                                        uartController.send(0x05, fanSpeed)
-                                    }
+                                    uartController.send(0x06, fanSpeed)
                                 }
                             }
                         }
@@ -217,19 +245,13 @@ Rectangle {
                                 id: fanDownArea
                                 anchors.fill: parent
                                 onClicked: {
-                                    if (fanSpeed > 0) {
-                                        fanSpeed--
-                                        if (fanSpeed === 0)
-                                            uartController.send(0x0C, 0)
-                                        else
-                                            uartController.send(0x06, fanSpeed)
+                                    uartController.send(0x07, fanSpeed)
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
 
             // ── Control buttons ───────────────────────────────────────────────
             Row {
@@ -249,8 +271,7 @@ Rectangle {
                     }
                     background: Rectangle { color: acEnabled ? "#4ecdc4" : "#3a3a3a"; radius: 10; border.color: acEnabled ? "#4ecdc4" : "#555555"; border.width: 2 }
                     onClicked: {
-                        acEnabled = !acEnabled
-                        uartController.send(0x08, acEnabled ? 1 : 0)
+                        uartController.send(0x09, acEnabled ? 1 : 0)
                     }
                 }
 
@@ -265,8 +286,7 @@ Rectangle {
                     }
                     background: Rectangle { color: demistEnabled ? "#ff9900" : "#3a3a3a"; radius: 10; border.color: demistEnabled ? "#ff9900" : "#555555"; border.width: 2 }
                     onClicked: {
-                        demistEnabled = !demistEnabled
-                        uartController.send(0x07, demistEnabled ? 1 : 0)
+                        uartController.send(0x08, demistEnabled ? 1 : 0)
                     }
                 }
 
@@ -277,23 +297,25 @@ Rectangle {
                         anchors.centerIn: parent
                         spacing: 4
                         Text {
-                            text: ventMode === "face" ? "😊" : ventMode === "feet" ? "🦶" : ventMode === "both" ? "↕️" : "De"
+                            text: ventMode === "face"       ? "😊"
+                                : ventMode === "feetdemist" ? "❄️"
+                                : ventMode === "feetface"   ? "↕️"
+                                : "🦶"
                             font.pixelSize: 22
                             anchors.horizontalCenter: parent.horizontalCenter
                         }
                         Text {
-                            text: ventMode === "face" ? "Face" : ventMode === "feet" ? "Feet" : ventMode === "both" ? "Both" : "Demist" //ventMode === "demist" ? "Demist"
+                            text: ventMode === "face"       ? "Face"
+                                : ventMode === "feetdemist" ? "Ft+Def"
+                                : ventMode === "feetface"   ? "Ft+Fc"
+                                : "Feet"
                             color: "white"; font.pixelSize: 14; font.bold: true
                             anchors.horizontalCenter: parent.horizontalCenter
                         }
                     }
                     background: Rectangle { color: "#3a3a3a"; radius: 10; border.color: "#4ecdc4"; border.width: 2 }
                     onClicked: {
-                        if (ventMode === "face")      ventMode = "feet"
-                        else if (ventMode === "feet") ventMode = "both"
-                        else if (ventMode === "both") ventMode = "demist"
-                        else                          ventMode = "face"
-                        uartController.send(0x09, ventModeInt())
+                        uartController.send(0x0A, ventModeInt())
                     }
                 }
 
@@ -308,8 +330,7 @@ Rectangle {
                     }
                     background: Rectangle { color: recirculation ? "#4ecdc4" : "#3a3a3a"; radius: 10; border.color: recirculation ? "#4ecdc4" : "#555555"; border.width: 2 }
                     onClicked: {
-                        recirculation = !recirculation
-                        uartController.send(0x0A, recirculation ? 1 : 0)
+                        uartController.send(0x0B, recirculation ? 1 : 0)
                     }
                 }
 
@@ -324,8 +345,7 @@ Rectangle {
                     }
                     background: Rectangle { color: autoMode ? "#4ecdc4" : "#3a3a3a"; radius: 10; border.color: autoMode ? "#4ecdc4" : "#555555"; border.width: 2 }
                     onClicked: {
-                        autoMode = !autoMode
-                        uartController.send(0x0B, autoMode ? 1 : 0)
+                        uartController.send(0x0C, autoMode ? 1 : 0)
                     }
                 }
             }

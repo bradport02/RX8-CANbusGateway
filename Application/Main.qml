@@ -54,7 +54,12 @@ Window {
                     color: "#c2c2c2"; radius: 5
                     anchors.verticalCenter: parent.verticalCenter
                     Text { text: "⌂"; font.pixelSize: 30; anchors.centerIn: parent }
-                    MouseArea { anchors.fill: parent; onClicked: stackView.pop(null) }
+                    MouseArea { anchors.fill: parent;
+                        onClicked:{
+                            uartController.sendLCDText("Main Menu")
+                            stackView.pop(null)
+                        }
+                    }
                 }
 
                 Rectangle {
@@ -85,7 +90,9 @@ Window {
                     Text { text: "🔊"; font.pixelSize: 30; anchors.centerIn: parent }
                     MouseArea {
                         anchors.fill: parent
-                        onClicked: volumePopup.opened = !volumePopup.opened
+                        onClicked: {
+                            volumePopup.opened = !volumePopup.opened
+                        }
                     }
                 }
             }
@@ -182,8 +189,6 @@ Window {
                     visible: bluetoothManager ? bluetoothManager.connected : false
                 }
             }
-
-
         }
 
         // ── Main content ──────────────────────────────────────────────────────
@@ -195,8 +200,6 @@ Window {
 
             // Close volume popup when navigating
             onCurrentItemChanged: volumePopup.opened = false
-
-
 
             pushEnter: Transition {
                 ParallelAnimation {
@@ -219,6 +222,7 @@ Window {
 
             Component { id: homePage;               HomePage                {}  }
             Component { id: mediaPage;              MediaPage               {}  }
+            Component { id: audioSettingsPage;      AudioSettingsPage       {}  }
             Component { id: carplayPage;            CarplayPage             {}  }
             Component { id: bluetoothPage;          PhonePage               {}  }
             Component { id: activeCallPage;         ActiveCallPage          {}  }
@@ -231,15 +235,16 @@ Window {
             Component { id: climatePage;            ClimatePage             {}  }
         }
     }
+
     // ── Dismiss by tapping outside popup ─────────────────────────────────────
     MouseArea {
         anchors.fill: parent
         enabled: volumePopup.opened
-        z: 998  // below popup (z:999) so slider still receives events
+        z: 998
         onClicked: volumePopup.opened = false
     }
 
-    // ── Volume popup — direct Window child for correct input handling ────────
+    // ── Volume popup — direct Window child for correct input handling ─────────
     Rectangle {
         id: volumePopup
         property bool opened: false
@@ -251,7 +256,6 @@ Window {
         border.color: "#177cff"
         border.width: 1
         z: 999
-        // Position below volume button (home50 + sep2 + back50 + sep2 + vol50 = x:148)
         x: 148
         y: 66
 
@@ -273,11 +277,25 @@ Window {
             }
         }
 
+        // Hold repeat — steps volume AND sends UART every 100ms while held
+        Timer {
+            id: holdRepeat
+            interval: 100
+            repeat: true
+            property int direction: 0
+            onTriggered: {
+                volumeSliderItem.volume = Math.max(0, Math.min(30, volumeSliderItem.volume + direction))
+                //uartController.sendLCDText("Volume: " + volumeSliderItem.volume)
+                sendVolumeTimer.restart()
+            }
+        }
+
         Column {
             anchors.fill: parent
             anchors.margins: 14
             spacing: 8
 
+            // ── Label row ─────────────────────────────────────────────────────
             Row {
                 width: parent.width
                 Text {
@@ -288,51 +306,102 @@ Window {
                     font.capitalization: Font.AllUppercase
                     anchors.verticalCenter: parent.verticalCenter
                 }
-                Item { width: parent.width - volLabel.implicitWidth - 100; height: 1 }
-                Text {
-                    id: volLabel
-                    text: volumeSliderItem.volume
-                    color: "white"
-                    font.pixelSize: 18
-                    font.bold: true
-                }
             }
 
+            // ── Controls row ──────────────────────────────────────────────────
             Item {
                 id: volumeSliderItem
                 width: parent.width
-                height: 28
+                height: 36
                 property int volume: 15
 
-                Rectangle {
-                    width: parent.width; height: 6; radius: 3
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: "#2a2a4a"
-                    Rectangle {
-                        width: (volumeSliderItem.volume / 30) * parent.width
-                        height: parent.height; radius: parent.radius
-                        color: "#177cff"
-                    }
-                }
-
-                Rectangle {
-                    width: 24; height: 24; radius: 12
-                    color: "white"
-                    border.color: "#177cff"; border.width: 2
-                    anchors.verticalCenter: parent.verticalCenter
-                    x: (volumeSliderItem.volume / 30) * (volumeSliderItem.width - width)
-                }
-
-                MouseArea {
+                Row {
                     anchors.fill: parent
-                    preventStealing: true
-                    onPressed:         updateVol(mouseX)
-                    onPositionChanged: updateVol(mouseX)
-                    function updateVol(mx) {
-                        volumeSliderItem.volume = Math.round(
-                            (Math.max(0, Math.min(mx, volumeSliderItem.width))
-                            / volumeSliderItem.width) * 30)
-                        root.volumeChangeRequested(volumeSliderItem.volume)
+                    spacing: 0
+
+                    // ── Minus button ──────────────────────────────────────────
+                    Rectangle {
+                        width: 36; height: 36; radius: 6
+                        color: minusArea.pressed ? "#177cff" : "#2a2a4a"
+                        border.color: "#177cff"; border.width: 1
+
+                        Text {
+                            text: "−"
+                            color: "white"
+                            font.pixelSize: 22
+                            font.bold: true
+                            anchors.centerIn: parent
+                        }
+
+                        Timer {
+                            id: sendVolumeTimer
+                            interval: 50
+                            repeat: false
+                            onTriggered: uartController.send(0x0F, volumeSliderItem.volume)
+                        }
+
+                        MouseArea {
+                            id: minusArea
+                            anchors.fill: parent
+                            onPressed: {
+                                // Step and send immediately on first tap
+                                volumeSliderItem.volume = Math.max(0, volumeSliderItem.volume - 1)
+                                //uartController.send(0x0F, volumeSliderItem.volume)
+                                //uartController.sendLCDText("Volume: " + volumeSliderItem.volume)
+                                sendVolumeTimer.restart()
+                                // Begin hold repeat for continuous press
+                                holdRepeat.direction = -1
+                                holdRepeat.restart()
+                            }
+                            onReleased: holdRepeat.stop()
+                            onCanceled: holdRepeat.stop()
+                        }
+                    }
+
+                    // ── Volume label (centre) ─────────────────────────────────
+                    Item {
+                        width: parent.width - 72
+                        height: 36
+
+                        Text {
+                            text: volumeSliderItem.volume
+                            color: "white"
+                            font.pixelSize: 22
+                            font.bold: true
+                            anchors.centerIn: parent
+                        }
+                    }
+
+                    // ── Plus button ───────────────────────────────────────────
+                    Rectangle {
+                        width: 36; height: 36; radius: 6
+                        color: plusArea.pressed ? "#177cff" : "#2a2a4a"
+                        border.color: "#177cff"; border.width: 1
+
+                        Text {
+                            text: "+"
+                            color: "white"
+                            font.pixelSize: 22
+                            font.bold: true
+                            anchors.centerIn: parent
+                        }
+
+                        MouseArea {
+                            id: plusArea
+                            anchors.fill: parent
+                            onPressed: {
+                                // Step and send immediately on first tap
+                                volumeSliderItem.volume = Math.min(30, volumeSliderItem.volume + 1)
+                                //uartController.sendLCDText("Volume: " + volumeSliderItem.volume)
+                                sendVolumeTimer.restart()
+                                //uartController.send(0x0F, volumeSliderItem.volume)
+                                // Begin hold repeat for continuous press
+                                holdRepeat.direction = 1
+                                holdRepeat.restart()
+                            }
+                            onReleased: holdRepeat.stop()
+                            onCanceled: holdRepeat.stop()
+                        }
                     }
                 }
             }

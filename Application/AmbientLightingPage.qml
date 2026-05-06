@@ -22,11 +22,11 @@ Rectangle {
     property bool  lightsOn:    settings.lightsOn
 
     // Persist on every change
-    onSelectedRChanged:   settings.selectedR   = selectedR //; sendAmbientLighting(R,G,B,brightness,LightOn) }
-    onSelectedGChanged:   settings.selectedG   = selectedG
-    onSelectedBChanged:   settings.selectedB   = selectedB
-    onBrightnessChanged:  settings.brightness  = brightness
-    onLightsOnChanged:    settings.lightsOn    = lightsOn
+    onSelectedRChanged:  { settings.selectedR  = selectedR;  uartController.sendAmbient(selectedR, selectedG, selectedB, brightness, lightsOn) }
+    onSelectedGChanged:  { settings.selectedG  = selectedG;  uartController.sendAmbient(selectedR, selectedG, selectedB, brightness, lightsOn) }
+    onSelectedBChanged:  { settings.selectedB  = selectedB;  uartController.sendAmbient(selectedR, selectedG, selectedB, brightness, lightsOn) }
+    onBrightnessChanged: { settings.brightness = brightness; uartController.sendAmbient(selectedR, selectedG, selectedB, brightness, lightsOn) }
+    onLightsOnChanged:   { settings.lightsOn   = lightsOn;   uartController.sendAmbient(selectedR, selectedG, selectedB, brightness, lightsOn) }
 
 
 

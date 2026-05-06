@@ -5,6 +5,10 @@ Rectangle {
     id: root
     color: "transparent"
 
+    Component.onCompleted: {
+        uartController.sendLCDText("CD Player")
+    }
+
     // ── State — updated from UART incoming data (CMD 0x11) ────────────────────
     property int    activeCd:       1       // currently loaded CD (1-6)
     property int    currentTrack:   1

@@ -4,6 +4,10 @@ import QtQuick.Controls
 Rectangle {
     color: "#111118"
 
+    Component.onCompleted: {
+        uartController.sendLCDText("Radio")
+    }
+
     property real currentFrequency: 95.5
     property string currentBand: "FM"
     property int currentPreset: -1

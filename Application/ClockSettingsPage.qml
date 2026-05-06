@@ -68,14 +68,45 @@ Item {
     }
 
     function applyDateTime() {
-        systemClock.setDateTime(dispYear, dispMonth, dispDay,
-                                dispHour, dispMinute, dispSecond)
+        // Send to STM32 RTC — format: 0 = 24h, 1 = 12h
+        uartController.sendTime(dispHour, dispMinute, dispSecond,
+                                dispDay, dispMonth, dispYear,
+                                use24h ? 0 : 1)
+
+        // Also update the Pi's system clock if you still want local sync
+        if (systemClock)
+            systemClock.setDateTime(dispYear, dispMonth, dispDay,
+                                    dispHour, dispMinute, dispSecond)
+
         statusMessage = "Set to " + dispYear + "-" + pad(dispMonth) + "-" + pad(dispDay)
                       + "  " + pad(dispHour) + ":" + pad(dispMinute) + ":" + pad(dispSecond)
         statusTimer.restart()
     }
 
-    Component.onCompleted: pullCurrentTime()
+    Component.onCompleted: {
+        // Connect incoming RTC time from STM32
+        uartController.rtcTimeReceived.connect(function(hour, min, sec,
+                                                         day, month, year, format) {
+            dispHour   = hour
+            dispMinute = min
+            dispSecond = sec
+            dispDay    = day
+            dispMonth  = month
+            dispYear   = year
+            // format: 0=24h, 1=12h — only honour if you want the STM32 to drive this
+            // if (systemClock) systemClock.setUse24h(format === 0)
+
+            // Sync Pi system clock to the RTC value
+            if (systemClock)
+                systemClock.setDateTime(year, month, day, hour, min, sec)
+
+            statusMessage = "Synced from RTC"
+            statusTimer.restart()
+        })
+
+        // Request current time from STM32 RTC on startup
+        uartController.send(0x1D,0); //Send a request time packet
+    }
 
     // ── Background ────────────────────────────────────────────────────────────
     Rectangle { anchors.fill: parent; color: "#111118" }

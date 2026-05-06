@@ -21,9 +21,11 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine engine;
 
     // ── Existing controllers ──────────────────────────────────────────────────
+
     UARTController uartController;
     engine.rootContext()->setContextProperty("uartController", &uartController);
-    uartController.openPort("/dev/ttyAMA10");
+    qRegisterMetaType<ClimateStatus>("ClimateStatus");
+    uartController.openPort("/dev/ttyAMA0");
 
     CarPlayController carplayController;
     engine.rootContext()->setContextProperty("carplayController", &carplayController);

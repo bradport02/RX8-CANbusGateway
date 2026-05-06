@@ -505,6 +505,7 @@ Rectangle {
     }
 
     Component.onCompleted: {
+        uartController.sendLCDText("Telephone")
         // Load contacts on page open
         if (contactsManager.contactCount > 0) {
             contactsModel.clear()

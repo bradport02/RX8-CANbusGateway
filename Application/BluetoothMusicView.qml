@@ -5,6 +5,10 @@ Rectangle {
     id: root
     color: "transparent"
 
+    Component.onCompleted: {
+        uartController.sendLCDText("BT Music")
+    }
+
     function formatTime(ms) {
         var s = Math.floor(ms / 1000)
         var m = Math.floor(s / 60)

@@ -4,6 +4,10 @@ import QtQuick.Controls
 Rectangle {
     color: "#1a1a1a"
 
+    Component.onCompleted: {
+        uartController.sendLCDText("Main Menu")
+    }
+
     Grid {
         anchors.verticalCenterOffset: 100
         anchors.horizontalCenterOffset: 0
