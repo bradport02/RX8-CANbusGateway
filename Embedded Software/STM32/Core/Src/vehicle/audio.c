@@ -1,8 +1,9 @@
 /*
  * audio.c
- *
- *  Created on: 23 Mar 2026
- *      Author: bradp
+ * Created on: 23 Mar 2026
+ * Author: Bradley Port
+ * Royal Holloway University of London
+ * EE3000
  */
 
 
@@ -69,7 +70,7 @@ void Audio_Init(void) {
 	// Subaddress 0x05 - Volume softstep ON, everything else OFF
 	TDA7719_SetSoft1(
 	    0,  // soft_loun  - Loudness   OFF
-	    0,  // soft_vol   - Volume     ON  ← only this enabled
+	    0,  // soft_vol   - Volume     ON
 	    0,  // soft_treb  - Treble     OFF
 	    0,  // soft_mid   - Middle     OFF
 	    0,  // soft_bass  - Bass       OFF
@@ -104,10 +105,9 @@ void Audio_Init(void) {
     char dbg[64];
 	if(s.valid){
 	    snprintf(dbg, sizeof(dbg), "[TDA7719] Status: muted=%d busy=%d\r\n", s.muted, s.busy);
-	    Report_USB(dbg);
+	    //Report_USB(dbg);
 	} else {
-		Report_USB("Read: Failed");
-	    //printf("[TDA7719] Status read FAILED - I2C issue\r\n");
+		//Report_USB("Read: Failed");
 	}
 }
 
@@ -129,44 +129,6 @@ void Audio_SendVolume(uint8_t volume){
     if (previousVolume == 0 && volume > 0){
     	TDA7719_SetMute(1,0,2,1,0,0,1);
     }
-
-    /*
-    if (previousVolume <= 15 && volume > 15){
-        TDA7719_WriteReg(TDA7719_VOL, 0x0F);  // slider 15 = 0x0F
-        HAL_Delay(80);  // wait for softstep to reach 0dB (15 steps x 5ms)
-    }
-    else if (previousVolume > 15 && volume <= 15){
-        TDA7719_WriteReg(TDA7719_VOL, 0x3F);  // slider 15 = 0x0F
-        HAL_Delay(80);  // wait for softstep to reach 0dB (15 steps x 5ms)
-    }
-    */
-
-    /*
-    if (previousVolume < volume){
-		for (int currentVolume = (previousVolume + 1); currentVolume <= volume; currentVolume++){
-			//currentVolume++; //too choppy
-			if (currentVolume > 15){
-				TDA7719_WriteReg(TDA7719_VOL, 63 - (currentVolume - 15));
-			}
-			else{
-				TDA7719_WriteReg(TDA7719_VOL, currentVolume);
-			}
-			HAL_Delay(50);
-		}
-    }
-    else{
-		for (int currentVolume = (previousVolume - 1); currentVolume >= volume; currentVolume--){
-			//currentVolume--; //too choppy
-			if (currentVolume > 15){
-				TDA7719_WriteReg(TDA7719_VOL, 63 - (currentVolume - 15));
-			}
-			else{
-				TDA7719_WriteReg(TDA7719_VOL, currentVolume);
-			}
-			HAL_Delay(50);
-		}
-    }
-    */
 
     previousVolume = volume;
 

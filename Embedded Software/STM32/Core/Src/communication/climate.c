@@ -3,10 +3,7 @@
  * Created on: 24 Mar 2026
  * Author: Bradley Port
  * Royal Holloway University of London
- * EE3100
- *
- * STM32 HAL port of RX-8 AC serial protocol
- * Original reverse engineering: Arduino ESP32 code
+ * EE3000
  */
 
 #include "climate.h"
@@ -216,12 +213,6 @@ void Climate_CheckFlag(void){
 	        ClimatePacketReady = 0;
 	        climateReceived = 1;
 
-	        //char dbg[48];
-	        //snprintf(dbg, sizeof(dbg), "PKT: %02X %02X %02X %02X %02X %02X",
-	        //         ClimateBuf[0], ClimateBuf[1], ClimateBuf[2],
-	        //         ClimateBuf[3], ClimateBuf[4], ClimateBuf[5]);
-	        //Report_USB(dbg);
-
 	        if (memcmp(ClimateBuf, lastPKT, AC_PACKET_LEN) != 0) {
 	            memcpy(lastPKT, ClimateBuf, AC_PACKET_LEN);
 	            parsePacket(ClimateBuf);
@@ -256,7 +247,7 @@ void Climate_PrintStateSingle()
         s.demistFront,
         s.demistRear
     );
-    Report_USB(buf);
+    //Report_USB(buf);
 }
 
 void Climate_SetLCD(ACState_t *s){

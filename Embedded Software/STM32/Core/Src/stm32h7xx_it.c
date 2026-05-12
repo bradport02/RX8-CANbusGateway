@@ -62,6 +62,7 @@ extern DMA_HandleTypeDef hdma_uart5_rx;
 extern DMA_HandleTypeDef hdma_uart7_rx;
 extern UART_HandleTypeDef huart4;
 extern UART_HandleTypeDef huart7;
+extern FDCAN_HandleTypeDef hfdcan1;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -286,6 +287,17 @@ void UART7_IRQHandler(void)
   /* USER CODE BEGIN UART7_IRQn 1 */
 
   /* USER CODE END UART7_IRQn 1 */
+}
+
+void FDCAN1_IT0_IRQHandler(void)
+{
+	/* USER CODE BEGIN FDCAN1_IRQn 0 */
+
+	/* USER CODE END FDCAN1_IRQn 0 */
+	HAL_FDCAN_IRQHandler(&hfdcan1);
+	/* USER CODE BEGIN UART7_IRQn 1 */
+
+	/* USER CODE END FDCAN1_IRQn 1 */
 }
 
 /**

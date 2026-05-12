@@ -3,7 +3,7 @@
  * Created on: 22 Mar 2026
  * Bradley Port
  * Royal Holloway University of London
- * EE3100
+ * EE3000
  */
 
 #ifndef SRC_COMMUNICATION_CANBUS_H_

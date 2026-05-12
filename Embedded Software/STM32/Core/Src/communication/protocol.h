@@ -1,9 +1,9 @@
 /*
- * protocol.h
- * Created on: 22 Mar 2026
- * Bradley Port
+ * time.h
+ * Created on: 23 Mar 2026
+ * Author: Bradley Port
  * Royal Holloway University of London
- * EE3100
+ * EE3000
  */
 
 #ifndef PROTOCOL_H

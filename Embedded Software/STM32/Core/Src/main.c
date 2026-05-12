@@ -95,11 +95,13 @@ uint32_t lastFanSend = 0;
 volatile uint8_t uart7ErrorFlag = 0;
 volatile uint32_t uart7ErrorCode = 0;
 int uart7RxCount = 0;
+
 int uart5RxCount = 0;
 uint32_t uart7LastSize;
 RTC_TimeTypeDef sTime = {0};
 RTC_DateTypeDef sDate = {0};
-uint8_t lastMinute = 255;
+uint8_t lastMinute = 60; //not possible
+volatile uint8_t minuteChanged = 1; // Start at 1 to update LCD on boot
 uint8_t volumePending = 0;
 uint8_t lastVolume = 0;
 uint8_t volumeChange = 0;
@@ -153,6 +155,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+	uint32_t pre_P1R = RTC->BKP1R;
 
   /* USER CODE END 1 */
 
@@ -200,25 +203,23 @@ int main(void)
   MX_TIM14_Init();
   MX_TIM3_Init();
   MX_I2C1_Init();
-  /* USER CODE BEGIN 2 */
-  HAL_Delay(2000);
 
-  //RTC stuff
-
-  //sTime.Hours   = 12;
-  //sTime.Minutes = 0;
-  //sTime.Seconds = 0;
-  //HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-
-  //sDate.WeekDay = RTC_WEEKDAY_MONDAY;
-  //sDate.Month   = RTC_MONTH_MARCH;
-  //sDate.Date    = 23;
-  //sDate.Year    = 26;
-  //HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-
+  HAL_PWR_EnableBkUpAccess();
+  char buf[240];
+  if (pre_P1R == 0x0000){
+	  snprintf(buf, sizeof(buf),
+		  "COLD: TR=0x%08lX DR=0x%08lX BKP1=0x%08lX BKP1_R=0x%08lX BDCR=0x%08lX BKP1R=0x%08lX BKP0R=0x%08lX",
+		  RTC->TR, RTC->DR, RTC->BKP1R, pre_P1R, RCC->BDCR,  RTC->BKP1R, RTC->BKP0R);
+  }
+  else{
+	  snprintf(buf, sizeof(buf),
+		  "HOT: TR=0x%08lX DR=0x%08lX BKP1=0x%08lX BKP1_R=0x%08lX BDCR=0x%08lX BKP1R=0x%08lX BKP0R=0x%08lX",
+		  RTC->TR, RTC->DR, RTC->BKP1R, pre_P1R, RCC->BDCR,  RTC->BKP1R, RTC->BKP0R);
+  }
+  HAL_Delay(1000);
   DWT_Init();
   TDA7719_Init(&hi2c1);
-  Report_USB("Booting...");
+  //Report_USB("Booting...");
   LCD_Init(&hspi2, &htim2);
   Climate_Init(&huart7);
   LCD_Print("Booting...");
@@ -243,12 +244,14 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   //I2C_Scan(&hi2c1);
   int counter = 0;
-  int lastTimeUpdate = HAL_GetTick();
   int lastCANsend = HAL_GetTick();
   uint32_t lastPrint = 0;
 
   Audio_Init();
   LCD_Print("Loop Starting...");
+  HAL_Delay(100);
+  Report_USB(buf);
+  HAL_Delay(1000);
 
   while (1)
   {
@@ -257,18 +260,23 @@ int main(void)
       Climate_CheckFlag();
       CAN_CheckFlag();
 
+      HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+      HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN); // CRITICAL: You MUST read the date after the time
+
+      if (sTime.Minutes != lastMinute) {
+    	  Report_USB("Minute Changed");
+          Climate_SetLCD(&acState);
+          lastMinute = sTime.Minutes; // Save the new minute
+      }
+
       if (lcdReset && (HAL_GetTick() - lcdResetTimer >= 3000)){
 			  //reset LCD to the last known buffer
 			  LCD_Print(lastLCDMessage);
 			  lcdReset = 0;
       }
 
-      if (HAL_GetTick() - lastTimeUpdate >= 30000){
-          Climate_SetLCD(&acState);
-          lastTimeUpdate = HAL_GetTick();
-      }
-
       if (HAL_GetTick() - lastCANsend >= 1000) {
+    	  //Send CAN frame every second to test CAN2.
           uint8_t data[8] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
           CAN_Send(data, 0x123);
 
@@ -276,16 +284,10 @@ int main(void)
           HAL_FDCAN_GetProtocolStatus(&hfdcan2, &psr);
 
 
-          //char dbg[128];
-          //snprintf(dbg, sizeof(dbg),
-          //    "PSR: BusOff=%d ErrPassive=%d LEC=%d | TxFifo=%lu",
-          //    psr.BusOff,
-          //    psr.ErrorPassive,
-          //    psr.LastErrorCode,
-          //    HAL_FDCAN_GetTxFifoFreeLevel(&hfdcan2));
-          //Report_USB(dbg);
-
+          char dbg[128];
           lastCANsend = HAL_GetTick();
+          FDCAN_ProtocolStatusTypeDef psr1;
+          HAL_FDCAN_GetProtocolStatus(&hfdcan1, &psr1);
       }
 
       if (HAL_GetTick() - lastPrint > 20)
@@ -293,6 +295,7 @@ int main(void)
           lastPrint = HAL_GetTick();
           Climate_SendDefault();
       }
+
   }
       /* USER CODE END WHILE */
 
@@ -302,7 +305,6 @@ int main(void)
     /* Use this when LSE is working...
      *
      */
-	/*
     void SystemClock_Config(void)
     {
       RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -318,6 +320,13 @@ int main(void)
 
       // Configure LSE Drive Capability
       HAL_PWR_EnableBkUpAccess();
+
+
+	// *** TEMPORARY CODE TO CLEAR STUCK LSI SETTING ***
+	//__HAL_RCC_BACKUPRESET_FORCE();
+	//__HAL_RCC_BACKUPRESET_RELEASE();
+	// *************************************************
+
       __HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_HIGH);
 
       // Initializes the RCC Oscillators according to the specified parameters
@@ -345,6 +354,15 @@ int main(void)
         Error_Handler();
       }
 
+      if (__HAL_RCC_GET_FLAG(RCC_FLAG_LSERDY) == RESET) {
+          uint32_t timeout = HAL_GetTick();
+          while (__HAL_RCC_GET_FLAG(RCC_FLAG_LSERDY) == RESET) {
+              if (HAL_GetTick() - timeout > 2000) {
+                  Error_Handler(); // or fallback to LSI
+              }
+          }
+      }
+
       // Initializes the CPU, AHB and APB buses clocks
 
       RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
@@ -358,74 +376,24 @@ int main(void)
       RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV2;
       RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2;
 
+      RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
+
       if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
       {
         Error_Handler();
       }
-      HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSI, RCC_MCODIV_1);
+
+      // Route the LSE to the RTC block
+      PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+      PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
+      if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
+      {
+        Error_Handler();
+      }
+
+      HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_LSE, RCC_MCODIV_1);
+      //Change to HSE for 25MHz
   }
-    */
-
-  /**
-    * @brief System Clock Configuration
-    * @retval None
-    */
-
-  void SystemClock_Config(void)
-  {
-    RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-    RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
-
-    // Supply configuration update enable
-    HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
-
-    // Configure the main internal regulator output voltage
-    __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
-
-    while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
-
-    // Initializes the RCC Oscillators according to the specified parameters in the RCC_OscInitTypeDef structure.
-    RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI48|RCC_OSCILLATORTYPE_HSI
-                                |RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
-    RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-    RCC_OscInitStruct.HSIState = RCC_HSI_DIV1;
-    RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-    RCC_OscInitStruct.LSIState = RCC_LSI_ON;
-    RCC_OscInitStruct.HSI48State = RCC_HSI48_ON;
-    RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-    RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-    RCC_OscInitStruct.PLL.PLLM = 2;
-    RCC_OscInitStruct.PLL.PLLN = 64;
-    RCC_OscInitStruct.PLL.PLLP = 2;
-    RCC_OscInitStruct.PLL.PLLQ = 3;
-    RCC_OscInitStruct.PLL.PLLR = 2;
-    RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_3;
-    RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
-    RCC_OscInitStruct.PLL.PLLFRACN = 0;
-    if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-    {
-      Error_Handler();
-    }
-
-    // Initializes the CPU, AHB and APB buses clocks
-    RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                                |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2
-                                |RCC_CLOCKTYPE_D3PCLK1|RCC_CLOCKTYPE_D1PCLK1;
-    RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-    RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
-    RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV2;
-    RCC_ClkInitStruct.APB3CLKDivider = RCC_APB3_DIV2;
-    RCC_ClkInitStruct.APB1CLKDivider = RCC_APB1_DIV4;
-    RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV2;
-    RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV2;
-
-    if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
-    {
-      Error_Handler();
-    }
-    HAL_RCC_MCOConfig(RCC_MCO1, RCC_MCO1SOURCE_HSI, RCC_MCODIV_1);
-  }
-
 
 /**
   * @brief Peripherals Common Clock Configuration
@@ -765,17 +733,6 @@ static void MX_QUADSPI_Init(void)
   */
 static void MX_RTC_Init(void)
 {
-
-  /* USER CODE BEGIN RTC_Init 0 */
-
-  /* USER CODE END RTC_Init 0 */
-
-  /* USER CODE BEGIN RTC_Init 1 */
-
-  /* USER CODE END RTC_Init 1 */
-
-  /** Initialize RTC Only
-  */
   hrtc.Instance = RTC;
   hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
   hrtc.Init.AsynchPrediv = 127;
@@ -784,21 +741,71 @@ static void MX_RTC_Init(void)
   hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
   hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
   hrtc.Init.OutPutRemap = RTC_OUTPUT_REMAP_NONE;
-  if (HAL_RTC_Init(&hrtc) != HAL_OK)
-  {
-    Error_Handler();
+
+  HAL_PWR_EnableBkUpAccess();
+
+  if (HAL_RTC_Init(&hrtc) != HAL_OK) {
+      Error_Handler();
   }
 
-  /** Enable Calibrartion
+  uint32_t magic = RTC->BKP1R;
+
+  if (magic == 0x0000) {
+      RTC_TimeTypeDef sTime = {0};
+      RTC_DateTypeDef sDate = {0};
+
+      sTime.Hours   = 12;
+      sTime.Minutes = 0;
+      sTime.Seconds = 45;
+
+      sDate.Date  = 1;
+      sDate.Month = 1;
+      sDate.Year  = 26;
+
+      HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+      HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+  }
+
+
+  RTC->BKP1R = 0xCCCC0000;  // marker "cold"
+
+  // Cold boot: full RTC initialisation.
+
+
+  // Bypass shadow registers on cold boot too, so behaviour is consistent.
+  //__HAL_RTC_WRITEPROTECTION_DISABLE(&hrtc);
+  //SET_BIT(RTC->CR, RTC_CR_BYPSHAD);
+  //__HAL_RTC_WRITEPROTECTION_ENABLE(&hrtc);
+
+  if (HAL_RTCEx_SetCalibrationOutPut(&hrtc, RTC_CALIBOUTPUT_1HZ) != HAL_OK) {
+      Error_Handler();
+  }
+
+  /*
+
+  // In Protocol_ProcessPacket, case CMD_SET_TIME (0x15):
+  // payload layout: [hours, minutes, seconds, day, month, year_lo, year_hi]
+  RTC_TimeTypeDef sTime = {0};
+  RTC_DateTypeDef sDate = {0};
+
+  sTime.Hours   = 12;
+  sTime.Minutes = 0;
+  sTime.Seconds = 0;
+  sTime.TimeFormat = RTC_HOURFORMAT12_AM;        // unused in 24h mode but init it
+  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+
+  sDate.Date    = 1;
+  sDate.Month   = 1;
+  sDate.Year    = 26;                 // 0–99, year offset from 2000
+  sDate.WeekDay = RTC_WEEKDAY_THURSDAY;            // computed or sent
+
+  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) Error_Handler();
+  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK) Error_Handler();
+
+  // Mark RTC as configured for future warm boots
+  RTC->BKP0R = 0x32F2;
   */
-  if (HAL_RTCEx_SetCalibrationOutPut(&hrtc, RTC_CALIBOUTPUT_1HZ) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN RTC_Init 2 */
-
-  /* USER CODE END RTC_Init 2 */
-
 }
 
 /**
@@ -1560,6 +1567,10 @@ void I2C_Scan(I2C_HandleTypeDef *hi2c)
     Report_USB("--- I2C Scan End ---");
 }
 
+void HAL_RTC_AlarmAEventCallback(RTC_HandleTypeDef *hrtc) {
+    minuteChanged = 1;
+}
+
 void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan1, uint32_t RxFifo0ITs){
 	/* - This function is active when an interrupt is fired   -
 	 * - Reads the incoming CAN Frame and retransmits on CAN2 - */
@@ -1569,6 +1580,7 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan1, uint32_t RxFifo0ITs
 	    //if FDCAN2 calls the fifo then it will not run the code.
 	}
 	if((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) != RESET){
+		can_sent_flag = 1;
 
 		FDCAN_RxHeaderTypeDef rxHeader;
 		uint8_t	rxData[64];

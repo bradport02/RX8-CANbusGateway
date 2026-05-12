@@ -1,8 +1,9 @@
 /*
- * Brad Port
+ * time.c
+ * Created on: 23 Mar 2026
+ * Author: Bradley Port
+ * Royal Holloway University of London
  * EE3000
- * 03/04/26
- *
  */
 
 #include "main.h"

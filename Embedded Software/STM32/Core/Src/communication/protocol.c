@@ -126,11 +126,6 @@ void Protocol_HandlePacket(UART_HandleTypeDef *huart, RxPacket_t pkt){
 	//Copy of pkt so DMA can be re armed
 
 
-    //char dbg[32];
-    //snprintf(dbg, sizeof(dbg), "CMD: 0x%02X from: 0x%02X", pkt.cmd, pkt.start);
-    //Report_USB(dbg);
-
-
 	switch (pkt.cmd){
 
 		case CMD_HANDSHAKE:
@@ -276,14 +271,8 @@ void Protocol_HandlePacket(UART_HandleTypeDef *huart, RxPacket_t pkt){
 			ambientData[2] = pkt.data[2]; //blue
 			ambientData[3] = pkt.data[3]; //brightness
 			ambientData[4] = pkt.data[4]; //On Off
-			CAN_Send(ambientData,0x420);
+			CAN_Send(ambientData,0x420); //command number 420
 			Protocol_SendACK(huart, STM, CMD_AMBIENT);
-			char dbg[32];
-			snprintf(dbg, sizeof(dbg), "Data: R=0x%02X G=0x%02X B=0x%02X",
-			    pkt.data[0],
-			    pkt.data[1],
-			    pkt.data[2]);
-			Report_USB(dbg);
 			break;
 
 		case CMD_LCD_BRIGHTNESS:

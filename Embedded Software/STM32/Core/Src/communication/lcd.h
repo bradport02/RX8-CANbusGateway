@@ -15,13 +15,6 @@
 #include "main.h"
 #include <string.h>
 
-// -------------------------------------------------------
-// Pin mappings — match existing GPIO defines in main.h
-// LCD_ACMODE_Pin = MODE0 (AC)
-// LCD_RSMODE_Pin = MODE1 (RS)
-// LCD_EN_Pin     = CS/SS
-// All on GPIOD
-// -------------------------------------------------------
 #define LCD_AC_PORT     GPIOD
 #define LCD_AC_PIN      LCD_ACMODE_Pin
 
@@ -31,23 +24,13 @@
 #define LCD_CS_PORT     GPIOC
 #define LCD_CS_PIN      U1LCD_CS_Pin
 
-// -------------------------------------------------------
-// PWM Backlight — TIM2 CH2 on PB3
-// MCP1402T steps up to 8V
-// -------------------------------------------------------
 #define LCD_PWM_TIMER       htim2
 #define LCD_PWM_CHANNEL     TIM_CHANNEL_2
 #define LCD_PWM_DUTY_75     ((uint32_t)(4294967295UL * 0.75f))
 
-// -------------------------------------------------------
-// Icon register addresses (0x90–0x9D)
-// -------------------------------------------------------
 #define LCD_ICON_BASE   0x90
 #define LCD_ICON_COUNT  14
 
-// -------------------------------------------------------
-// Function prototypes
-// -------------------------------------------------------
 void LCD_Init(SPI_HandleTypeDef *hspi, TIM_HandleTypeDef *htim);
 
 static inline void DWT_Init(void)

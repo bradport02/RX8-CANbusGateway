@@ -1,8 +1,9 @@
 /*
  * audio.h
- *
- *  Created on: 23 Mar 2026
- *      Author: bradp
+ * Created on: 23 Mar 2026
+ * Author: Bradley Port
+ * Royal Holloway University of London
+ * EE3000
  */
 
 #ifndef AUDIO_H_

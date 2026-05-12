@@ -4,8 +4,6 @@
  * Author: Bradley Port
  * Royal Holloway University of London
  * EE3000
- *
- * STM32 HAL port of OEM RX-8 LCD driver
  */
 #include "lcd.h"
 #include "vehicle/time.h"
@@ -13,7 +11,6 @@
 static SPI_HandleTypeDef *_hspi;
 static TIM_HandleTypeDef *_htim;
 
-// Shadow arrays — match Arduino iconArray[0] and sevenSegmentArray[0]
 static uint8_t iconData[LCD_ICON_COUNT];
 static uint8_t iconDataFlushed[LCD_ICON_COUNT];
 static uint8_t sevenSegData[7];
@@ -29,15 +26,12 @@ extern uint8_t climateReceived;
 
 uint8_t saved[4] = {0};
 
-// Icon register addresses — matches Arduino iconArray[1]
 static const uint8_t iconAddr[LCD_ICON_COUNT] = {
     0x90, 0x91, 0x92, 0x93, 0x94, 0x95, 0x96,
     0x97, 0x98, 0x99, 0x9A, 0x9B, 0x9C, 0x9D
 };
 
-// -------------------------------------------------------
-// Pin helpers — replace Arduino digitalWrite
-// -------------------------------------------------------
+// PIN definitions
 static inline void AC_Low(void)  { HAL_GPIO_WritePin(LCD_AC_PORT, LCD_AC_PIN, GPIO_PIN_RESET); }
 static inline void AC_High(void) { HAL_GPIO_WritePin(LCD_AC_PORT, LCD_AC_PIN, GPIO_PIN_SET); }
 static inline void RS_Low(void)  { HAL_GPIO_WritePin(LCD_RS_PORT, LCD_RS_PIN, GPIO_PIN_RESET); }
@@ -45,17 +39,12 @@ static inline void RS_High(void) { HAL_GPIO_WritePin(LCD_RS_PORT, LCD_RS_PIN, GP
 static inline void CS_Low(void)  { HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_RESET); }
 static inline void CS_High(void) { HAL_GPIO_WritePin(LCD_CS_PORT, LCD_CS_PIN, GPIO_PIN_SET); }
 
-// -------------------------------------------------------
-// SPI byte transfer — replaces SPI.transfer()
-// -------------------------------------------------------
+
 static void SPI_Transfer(uint8_t byte)
 {
     HAL_SPI_Transmit(_hspi, &byte, 1, HAL_MAX_DELAY);
 }
 
-// -------------------------------------------------------
-// Init — store handles, start PWM, run startup sequence
-// -------------------------------------------------------
 void LCD_Init(SPI_HandleTypeDef *hspi, TIM_HandleTypeDef *htim)
 {
     _hspi = hspi;
@@ -65,29 +54,21 @@ void LCD_Init(SPI_HandleTypeDef *hspi, TIM_HandleTypeDef *htim)
     memset(sevenSegData, 0, sizeof(sevenSegData));
 
     // Enable the display — permanently HIGH
-    HAL_GPIO_WritePin(GPIOD, LCD_EN_Pin, GPIO_PIN_SET);  // ← add this
+    HAL_GPIO_WritePin(GPIOD, LCD_EN_Pin, GPIO_PIN_SET);
     LCD_SetBacklight(0);
     LCD_Startup();
     LCD_SetTime();
     LCD_SetBacklight(100);
 }
 
-// -------------------------------------------------------
-// Backlight PWM — 0–100%
-// TIM2 CH2 on PB3 → MCP1402T → 8V LCD supply
-// -------------------------------------------------------
 void LCD_SetBacklight(uint8_t percent)
 {
     if (percent > 100) percent = 100;
-    uint32_t duty = (uint32_t)(percent * 99 / 100); // 75% → compare = 74
+    uint32_t duty = (uint32_t)(percent * 99 / 100);
     __HAL_TIM_SET_COMPARE(_htim, LCD_PWM_CHANNEL, duty);
     HAL_TIM_PWM_Start(_htim, LCD_PWM_CHANNEL);
 }
 
-// -------------------------------------------------------
-// Send a command byte (AC=LOW, RS=LOW)
-// Matches Arduino: MODE0=LOW, MODE1=LOW
-// -------------------------------------------------------
 void LCD_SendCommand(uint8_t cmd)
 {
     AC_Low();
@@ -97,10 +78,6 @@ void LCD_SendCommand(uint8_t cmd)
     CS_High();
 }
 
-// -------------------------------------------------------
-// Send a data byte (AC=HIGH, RS=LOW)
-// Matches Arduino: MODE0=HIGH, MODE1=LOW in data sections
-// -------------------------------------------------------
 void LCD_SendData(uint8_t data)
 {
     AC_High();
@@ -108,14 +85,10 @@ void LCD_SendData(uint8_t data)
     CS_Low();
     SPI_Transfer(data);
     CS_High();
-    DWT_Delay_us(42);   // match Arduino delayMicroseconds(42)
-    //HAL_Delay(5);
+    DWT_Delay_us(42);
     AC_Low();
 }
 
-// -------------------------------------------------------
-// Set a single icon register directly
-// -------------------------------------------------------
 void LCD_SetICON(uint8_t address, uint8_t value)
 {
     AC_Low();
@@ -128,14 +101,11 @@ void LCD_SetICON(uint8_t address, uint8_t value)
     CS_Low();
     SPI_Transfer(value);
     CS_High();
-    Delay_us(42);
+    DWT_Delay_us(42);
     //HAL_Delay(5);
     RS_Low();
 }
 
-// -------------------------------------------------------
-// Flush all icon shadow registers to display then clear
-// -------------------------------------------------------
 void LCD_FlushIcons(void)
 {
     for (uint8_t i = 0; i < LCD_ICON_COUNT; i++)
@@ -161,9 +131,6 @@ void LCD_FlushIcons(void)
     }
 }
 
-// -------------------------------------------------------
-// Flush seven segment CGRAM to display
-// -------------------------------------------------------
 void LCD_FlushSevenSegment(void)
 {
     // Set CGRAM address — AC_High matches Arduino MODE0_HIGH
@@ -176,7 +143,7 @@ void LCD_FlushSevenSegment(void)
 
     for (uint8_t i = 0; i < 7; i++)
     {
-        RS_High();   // ✅ matches Arduino MODE1_HIGH
+        RS_High();
         CS_Low();
         SPI_Transfer(sevenSegData[i]);
         CS_High();
@@ -212,9 +179,6 @@ void LCD_FlushSevenSegment(void)
     CS_Low(); RS_Low();
 }
 
-// -------------------------------------------------------
-// Startup sequence — matches Arduino lcdDisplayStartUp()
-// -------------------------------------------------------
 void LCD_Startup(void)
 {
     AC_Low();
@@ -263,23 +227,17 @@ void LCD_Startup(void)
 void LCD_Clear(void)  { LCD_SendCommand(0x01); }
 void LCD_Home(void)   { LCD_SendCommand(0x02); }
 
-// -------------------------------------------------------
-// Reset icon display — write 0x00 to all icon registers
-// -------------------------------------------------------
 void LCD_ResetIcons(void)
 {
 	memset(iconData, 0, sizeof(iconData));
 }
 
-// -------------------------------------------------------
-// Reset LCD text to spaces
-// -------------------------------------------------------
 void LCD_Reset(void)
 {
     LCD_SendCommand(0x80);
     for (uint8_t i = 0; i < 12; i++)
     {
-        AC_High();   // ✅ matches Arduino MODE0_HIGH
+        AC_High();
         RS_Low();
         CS_Low();
         SPI_Transfer(0x20);
@@ -290,9 +248,6 @@ void LCD_Reset(void)
     }
 }
 
-// -------------------------------------------------------
-// Print string — up to 12 characters, space padded
-// -------------------------------------------------------
 void LCD_Print(const char *text)
 {
     char buf[13] = {0};
@@ -315,9 +270,6 @@ void LCD_Print(const char *text)
     }
 }
 
-// -------------------------------------------------------
-// Fan speed (0–7) — updates icon shadow array
-// -------------------------------------------------------
 void LCD_SetFanSpeed(uint8_t speed)
 {
     switch (speed)
@@ -335,9 +287,6 @@ void LCD_SetFanSpeed(uint8_t speed)
     }
 }
 
-// -------------------------------------------------------
-// Vent mode (0=Feet, 1=Feet+Demist, 2=Face, 3=Face+Feet)
-// -------------------------------------------------------
 void LCD_SetVentMode(uint8_t mode)
 {
     iconData[12] += 0x01; // Seated Man — always on
@@ -389,9 +338,7 @@ void LCD_SetDemistFront(uint8_t demist){
 	}
 
 }
-// -------------------------------------------------------
-// Dividers (0=L/H vertical, 1=R/H vertical, 2=HH:MM)
-// -------------------------------------------------------
+
 void LCD_SetDivider()
 {
     iconData[1]  += 0x10; //Left
@@ -399,14 +346,10 @@ void LCD_SetDivider()
     iconData[3]  += 0x04; //Time
 }
 
-// -------------------------------------------------------
-// Minute digit segments (digit=1 for Mm, digit=2 for mM)
-// -------------------------------------------------------
 void LCD_SetMinDigit(uint8_t digit, uint8_t value)
 {
     if (digit == 1)   // Mm units
     {
-        // ← no clearing here
         switch (value)
         {
             case 0: iconData[0]+=0x18; iconData[2]+=0x07; iconData[3]+=0x08; break;
@@ -437,9 +380,6 @@ void LCD_SetMinDigit(uint8_t digit, uint8_t value)
     	}
 }
 
-// -------------------------------------------------------
-// Seven segment number (0–9) for temperature/time display
-// -------------------------------------------------------
 void LCD_SetSevenSegment(uint8_t col, uint8_t value)
 {
     switch (value)
@@ -490,22 +430,12 @@ static void clearTempColumns(void)
     }
 }
 
-// -------------------------------------------------------
-// Set minute digit
-// col 0 = Mm (units/right), col 1 = mM (tens/left)
-// value 0-9
-// -------------------------------------------------------
 void LCD_SetMinute(uint8_t col, uint8_t value)
 {
     LCD_SetMinDigit(col == 0 ? 1 : 2, value);
     //LCD_FlushIcons();
 }
 
-// -------------------------------------------------------
-// Set hour digit
-// col 0 = hH (units), col 1 = Hh (tens)
-// value 0-9
-// -------------------------------------------------------
 void LCD_SetHour(uint8_t col, uint8_t value)
 {
     // col 0 = hH units (0x08), col 1 = Hh tens (0x10)
@@ -523,7 +453,7 @@ void LCD_SetTempDigit(uint8_t col, uint8_t value)
 
 void LCD_SetTime()
 {
-    clearHourColumns();              // ← only clears hour bits
+    clearHourColumns();
     Time_GetTime();
 
     if (sTime.Minutes == lastMinute)
@@ -553,7 +483,7 @@ void LCD_SetTemperature(uint8_t tens, uint8_t units, uint8_t decimal)
     //uint8_t integer = (uint8_t)temp;
     //uint8_t decimal = (uint8_t)((temp - integer) * 10 + 0.5f);
 
-    clearTempColumns();              // ← only clears temp bits
+    clearTempColumns();
     LCD_SetTempDigit(0, tens);
     LCD_SetTempDigit(1, units);
     LCD_SetTempDigit(2, decimal);

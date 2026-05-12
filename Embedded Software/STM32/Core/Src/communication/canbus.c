@@ -3,7 +3,7 @@
  * Created on: 22 Mar 2026
  * Bradley Port
  * Royal Holloway University of London
- * EE3100
+ * EE3000
  */
 
 #include "canbus.h"
@@ -25,6 +25,7 @@ volatile uint8_t msg_ready = 0;
 uint8_t msg[64];
 
 void CAN_Start(FDCAN_HandleTypeDef *hfdcan_rx, FDCAN_HandleTypeDef *hfdcan_tx){
+		// CAN startup sequence
 	  FDCAN_FilterTypeDef sFilterConfig_rx;
 
 	  sFilterConfig_rx.IdType = FDCAN_STANDARD_ID;
@@ -65,9 +66,6 @@ void CAN_Start(FDCAN_HandleTypeDef *hfdcan_rx, FDCAN_HandleTypeDef *hfdcan_tx){
 
 void CAN_Send(uint8_t *data, uint16_t std_id){
 	/* - Function to send basic can data - A TEST */
-	//uint8_t data[8] = {0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88};
-	//uint16_t std_id = 0x123;
-	//uint8_t len = 8;
     FDCAN_TxHeaderTypeDef txHeader = {0};
     txHeader.Identifier = std_id;
     txHeader.IdType = FDCAN_STANDARD_ID;

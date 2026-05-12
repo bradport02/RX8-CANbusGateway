@@ -222,8 +222,9 @@ void HAL_FDCAN_MspInit(FDCAN_HandleTypeDef* hfdcan)
   if(hfdcan->Instance==FDCAN1)
   {
     /* USER CODE BEGIN FDCAN1_MspInit 0 */
-
-    /* USER CODE END FDCAN1_MspInit 0 */
+	HAL_NVIC_SetPriority(FDCAN1_IT0_IRQn, 1, 0);
+	HAL_NVIC_EnableIRQ(FDCAN1_IT0_IRQn);
+	/* USER CODE END FDCAN1_MspInit 0 */
 
   /** Initializes the peripherals clock
   */
@@ -556,7 +557,7 @@ void HAL_RTC_MspInit(RTC_HandleTypeDef* hrtc)
   /** Initializes the peripherals clock
   */
     PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_RTC;
-    PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_LSI;
+    PeriphClkInitStruct.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
     if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
     {
       Error_Handler();

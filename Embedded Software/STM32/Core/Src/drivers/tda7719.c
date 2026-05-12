@@ -43,7 +43,7 @@ void TDA7719_WriteRegVerified(uint8_t reg, uint8_t data, const char *name){
         name, reg, data,
         (result == HAL_OK) ? "OK" : "FAIL"
     );
-    Report_USB(dbg);
+    //Report_USB(dbg);
 }
 
 //Init I2C
@@ -169,7 +169,6 @@ void TDA7719_SetVolume(int gain, int out_gain, int soft_step){
     uint8_t val = encodeGain(gain);
     val |= (out_gain & 0x01) << 6;
     val |= (soft_step & 0x01) << 7;
-    // Debug — use verified write so we can see what's being sent
     TDA7719_WriteRegVerified(TDA7719_VOL, val, "SetVolume");
 }
 
