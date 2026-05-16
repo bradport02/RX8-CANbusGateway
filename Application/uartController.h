@@ -47,6 +47,7 @@ Q_DECLARE_METATYPE(ClimateStatus)
 class UARTController : public QObject
 {
     Q_OBJECT
+    Q_PROPERTY(bool handshakeComplete READ handshakeComplete NOTIFY handshakeCompleteChanged)
 
 public:
     explicit UARTController(QObject *parent = nullptr);
@@ -76,6 +77,9 @@ public:
     //Send Time Data
     Q_INVOKABLE void sendTime(int hour, int min, int second, int day, int month, int year, int format);
 
+    // Handshake state
+    bool handshakeComplete() const { return m_handshakeComplete; }
+
 public slots:
     void onVolumeChanged(int volume);
 
@@ -84,6 +88,7 @@ signals:
     void connectionStatusChanged(bool connected);
     void climateStatusReceived(ClimateStatus status);
     void rtcTimeReceived(int hour, int min, int sec, int day,  int month, int year, int format);
+    void handshakeCompleteChanged();
 
 private slots:
     void handleReadyRead();
@@ -106,13 +111,16 @@ private:
         QByteArray data;
     };
 
-    static const int MAX_RETRIES = 0;
+    static const int MAX_RETRIES = 3;
 
     QQueue<PendingPacket> sendQueue;
     PendingPacket         currentPacket;
     bool                  inFlight   = false;
     int                   retryCount = 0;
     QTimer               *ackTimer   = nullptr;
+
+    // ── Handshake state ──────────────────────────────────────────────────────
+    bool m_handshakeComplete = false;
 
     void enqueue(quint8 cmd, const QByteArray &data);
     void sendNext();

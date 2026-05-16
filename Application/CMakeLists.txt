@@ -10,6 +10,11 @@ qt_add_executable(appApplication
     main.cpp
 )
 
+qt_add_resources(appApplication "images"
+    PREFIX "/"
+    FILES assets/rhul_logo.jpg
+)
+
 qt_add_qml_module(appApplication
     URI Application
     QML_FILES
@@ -50,6 +55,7 @@ qt_add_qml_module(appApplication
         QML_FILES ClockSettingsPage.qml
         SOURCES SystemClock.h
         QML_FILES AudioSettingsPage.qml
+        QML_FILES
 )
 
 set_target_properties(appApplication PROPERTIES

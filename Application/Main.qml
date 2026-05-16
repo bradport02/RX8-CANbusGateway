@@ -407,4 +407,73 @@ Window {
             }
         }
     }
+    Rectangle {
+        id: dimOverlay
+        anchors.fill: parent
+        color: "black"
+        opacity: 1.0 - (Math.max(brightnessValue, 25) / 100.0)
+        z: 997
+        visible: opacity > 0
+        enabled: false
+
+        property int brightnessValue: 100
+    }
+    // ── Splash screen overlay ───────────────────────────────────────────────
+        Rectangle {
+            id: splashScreen
+            anchors.fill: parent
+            color: "black"
+            z: 10000
+            visible: !uartController.handshakeComplete && !splashDismissed
+
+            property bool splashDismissed: false
+
+            Image {
+                id: logo
+                anchors.centerIn: parent
+                source: "qrc:/assets/rhul_logo.jpg"
+                width: 300
+                fillMode: Image.PreserveAspectFit
+            }
+
+            Text {
+                id: errorText
+                anchors.top: logo.bottom
+                anchors.topMargin: 30
+                anchors.horizontalCenter: parent.horizontalCenter
+                color: "#cc0000"
+                font.pixelSize: 18
+                visible: false
+                text: "Something went wrong — STM32 no comms\nBooting without full functionality."
+                horizontalAlignment: Text.AlignHCenter
+            }
+
+            Timer {
+                id: handshakeTimeout
+                interval: 5000
+                running: true
+                onTriggered: {
+                    if (!uartController.handshakeComplete) {
+                        errorText.visible = true
+                        failsafeTimer.start()
+                    }
+                }
+            }
+
+            Timer {
+                id: failsafeTimer
+                interval: 3000
+                onTriggered: splashScreen.splashDismissed = true
+            }
+
+            Connections {
+                target: uartController
+                function onHandshakeCompleteChanged() {
+                    if (uartController.handshakeComplete) {
+                        handshakeTimeout.stop()
+                        splashScreen.splashDismissed = true
+                    }
+                }
+            }
+        }
 }

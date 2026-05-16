@@ -57,11 +57,26 @@ Rectangle {
                     }
 
                     Slider {
+                        id: brightnessSlider
                         width: parent.width - 170
                         anchors.verticalCenter: parent.verticalCenter
                         from: 0
                         to: 100
-                        value: 80
+                        value: dimOverlay.brightnessValue
+
+                        onValueChanged: {
+                            brightnessDebounce.restart()
+                            dimOverlay.brightnessValue = Math.round(value)
+                        }
+
+                        Timer {
+                            id: brightnessDebounce
+                            interval: 80
+                            onTriggered: {
+                                var byteVal = Math.round(brightnessSlider.value)
+                                uartController.send(0x19, byteVal)
+                            }
+                        }
                     }
                 }
             }

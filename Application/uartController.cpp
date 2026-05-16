@@ -280,6 +280,22 @@ void UARTController::handleReadyRead()
 
         switch (cmd)
         {
+        case 0x01:
+        {
+            if (!m_handshakeComplete) {
+                qDebug() << "[UART] Handshake received from STM32, sending reply";
+                QByteArray ackData;
+                ackData.append(static_cast<char>(0x06));
+                QByteArray reply = buildPacket(0x01, ackData);
+                serialPort->write(reply);
+                debugPacket(reply);
+                m_handshakeComplete = true;
+                emit handshakeCompleteChanged();
+                qDebug() << "[UART] Handshake complete — ready to boot";
+            }
+            break;
+        }
+
         case 0x0E:  // Climate status — unsolicited, not an ACK
             if (data.size() >= 12)
             {
@@ -309,16 +325,16 @@ void UARTController::handleReadyRead()
         case 0x1C:
             if (data.size() >= 1){
 
-            int hour   = static_cast<uint8_t>(data[1]);
-            int min    = static_cast<uint8_t>(data[2]);
-            int sec    = static_cast<uint8_t>(data[3]);
-            int day    = static_cast<uint8_t>(data[4]);
-            int month  = static_cast<uint8_t>(data[5]);
-            int year   = (static_cast<uint8_t>(data[6]) << 8)
-                       |  static_cast<uint8_t>(data[7]);
-            int format = static_cast<uint8_t>(data[8]); // 0=24h, 1=12h
+                int hour   = static_cast<uint8_t>(data[1]);
+                int min    = static_cast<uint8_t>(data[2]);
+                int sec    = static_cast<uint8_t>(data[3]);
+                int day    = static_cast<uint8_t>(data[4]);
+                int month  = static_cast<uint8_t>(data[5]);
+                int year   = (static_cast<uint8_t>(data[6]) << 8)
+                           |  static_cast<uint8_t>(data[7]);
+                int format = static_cast<uint8_t>(data[8]); // 0=24h, 1=12h
 
-            emit rtcTimeReceived(hour, min, sec, day, month, year, format);
+                emit rtcTimeReceived(hour, min, sec, day, month, year, format);
             }
             break;
 
